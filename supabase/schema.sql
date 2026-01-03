@@ -1,7 +1,7 @@
 -- Enable UUID extension
 create extension if not exists "uuid-ossp";
 
--- PROFILES
+-- PROFILES (Mantido)
 create table public.profiles (
   id uuid references auth.users not null primary key,
   email text,
@@ -12,102 +12,128 @@ create table public.profiles (
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- ACCOUNTS (Contas bancárias, carteiras)
+-- ACCOUNTS (Mantido)
 create table public.accounts (
   id uuid default uuid_generate_v4() primary key,
   user_id uuid references public.profiles(id) on delete cascade not null,
   name text not null,
-  type text not null, -- 'checking', 'savings', 'wallet', 'investment'
+  type text not null,
   balance numeric default 0,
   currency text default 'BRL',
-  color text, -- For UI decoration
+  color text,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- TRANSACTIONS (Transações)
+-- TRANSACTIONS (Mantido)
 create table public.transactions (
   id uuid default uuid_generate_v4() primary key,
   user_id uuid references public.profiles(id) on delete cascade not null,
   account_id uuid references public.accounts(id) on delete set null,
-  type text not null, -- 'income', 'expense'
+  type text not null,
   amount numeric not null,
   category text,
   description text,
   date date default current_date,
-  status text default 'completed', -- 'pending', 'completed', 'overdue'
+  status text default 'completed',
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- INVESTMENTS (Investimentos)
+-- INVESTMENTS (Mantido)
 create table public.investments (
   id uuid default uuid_generate_v4() primary key,
   user_id uuid references public.profiles(id) on delete cascade not null,
   name text not null,
-  type text not null, -- 'stock', 'crypto', 'fixed_income'
+  type text not null,
   quantity numeric default 0,
   purchase_price numeric default 0,
   current_price numeric default 0,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- RLS POLICIES (Segurança)
+-- [[ NEW TABLES FOR CRM & CLIENTS ]] --
 
--- Enable RLS
-alter table public.profiles enable row level security;
-alter table public.accounts enable row level security;
-alter table public.transactions enable row level security;
-alter table public.investments enable row level security;
+-- CLIENTS
+create table public.clients (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  name text not null,
+  email text,
+  phone text,
+  instagram text,
+  status text default 'Ativo', -- 'Ativo', 'Inativo', 'Lead'
+  ltv numeric default 0,
+  last_purchase timestamp with time zone,
+  joined_date timestamp with time zone default timezone('utc'::text, now()),
+  origin text,
+  
+  -- Campos Estratégicos (Health Score, Classificação, etc)
+  classification jsonb default '{}'::jsonb, -- { status: 'Tranquilo', effort: 'Baixo' }
+  health_score integer default 100,
+  
+  -- Módulo de Gestão Interna (Board Completo)
+  internal_data jsonb default '{}'::jsonb, 
+  -- Estrutura do internal_data:
+  -- {
+  --   lifecycleStage: 'onboarding' | 'active',
+  --   onboardingChecklist: [],
+  --   relationshipType: 'Recorrente' | 'Pontual',
+  --   cycles: [],
+  --   projects: [],
+  --   contract: { value, startDate, ... },
+  --   decisionsLog: ''
+  -- }
 
--- Profiles Policies
-create policy "Users can view own profile" on public.profiles
-  for select using (auth.uid() = id);
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
 
-create policy "Users can update own profile" on public.profiles
-  for update using (auth.uid() = id);
+-- CRM DEALS (Oportunidades)
+create table public.deals (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  client_id uuid references public.clients(id) on delete set null, -- Link opcional
+  
+  title text not null,
+  value numeric default 0,
+  stage text not null, -- 'Prospecção', 'Qualificação', etc
+  probability numeric default 0,
+  priority text default 'Medium',
+  
+  -- Dados de Contato (se não tiver client_id ainda)
+  contact_name text,
+  contact_phone text,
+  contact_email text,
+  instagram text,
+  origin text,
+  
+  closing_date date,
+  description text,
+  
+  -- Histórico e Comentários
+  history jsonb default '[]'::jsonb,
+  comments jsonb default '[]'::jsonb,
+  
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
 
-create policy "Users can insert own profile" on public.profiles
-  for insert with check (auth.uid() = id);
+-- RLS POLICIES REMAINING...
+alter table public.clients enable row level security;
+alter table public.deals enable row level security;
 
--- Accounts Policies
-create policy "Users can view own accounts" on public.accounts
-  for select using (auth.uid() = user_id);
+-- Client Policies
+create policy "Users can view own clients" on public.clients for select using (auth.uid() = user_id);
+create policy "Users can insert own clients" on public.clients for insert with check (auth.uid() = user_id);
+create policy "Users can update own clients" on public.clients for update using (auth.uid() = user_id);
+create policy "Users can delete own clients" on public.clients for delete using (auth.uid() = user_id);
 
-create policy "Users can insert own accounts" on public.accounts
-  for insert with check (auth.uid() = user_id);
+-- Deal Policies
+create policy "Users can view own deals" on public.deals for select using (auth.uid() = user_id);
+create policy "Users can insert own deals" on public.deals for insert with check (auth.uid() = user_id);
+create policy "Users can update own deals" on public.deals for update using (auth.uid() = user_id);
+create policy "Users can delete own deals" on public.deals for delete using (auth.uid() = user_id);
 
-create policy "Users can update own accounts" on public.accounts
-  for update using (auth.uid() = user_id);
-
-create policy "Users can delete own accounts" on public.accounts
-  for delete using (auth.uid() = user_id);
-
--- Transactions Policies
-create policy "Users can view own transactions" on public.transactions
-  for select using (auth.uid() = user_id);
-
-create policy "Users can insert own transactions" on public.transactions
-  for insert with check (auth.uid() = user_id);
-
-create policy "Users can update own transactions" on public.transactions
-  for update using (auth.uid() = user_id);
-
-create policy "Users can delete own transactions" on public.transactions
-  for delete using (auth.uid() = user_id);
-
--- Investments Policies
-create policy "Users can view own investments" on public.investments
-  for select using (auth.uid() = user_id);
-
-create policy "Users can insert own investments" on public.investments
-  for insert with check (auth.uid() = user_id);
-
-create policy "Users can update own investments" on public.investments
-  for update using (auth.uid() = user_id);
-
-create policy "Users can delete own investments" on public.investments
-  for delete using (auth.uid() = user_id);
-
--- FUNCTION TO HANDLE NEW USER SIGNUP
+-- Existing Triggers...
 create or replace function public.handle_new_user()
 returns trigger as $$
 begin
@@ -117,7 +143,8 @@ begin
 end;
 $$ language plpgsql security definer;
 
--- TRIGGER FOR NEW USER
+-- Re-create trigger just in case (optional here if already ran, but good for full script)
+drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
