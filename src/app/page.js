@@ -1,7 +1,7 @@
 export default function Home() {
   return (
     <main style={{ padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
-      <h1 style={{ fontSize: '2.5rem', fontWeight: 'bold' }}>Pivot Financial Clone</h1>
+      <h1 style={{ fontSize: '2.5rem', fontWeight: 'bold' }}>Hex Safe</h1>
       <p style={{ color: 'var(--muted)' }}>Sistema Financeiro em Construção...</p>
 
       <div style={{ marginTop: '2rem' }}>
