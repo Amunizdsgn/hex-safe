@@ -19,25 +19,58 @@ export default function MetasPage() {
     const [newPersonalGoal, setNewPersonalGoal] = useState('');
     const [newBusinessGoal, setNewBusinessGoal] = useState('');
 
-    const fetchGoals = async () => {
-        if (!user) return;
-        setLoading(true);
-        const { data, error } = await supabase
-            .from('goals')
-            .select('*')
-            .order('created_at', { ascending: true });
+    // Debug & Timeout
+    useEffect(() => {
+        console.log("MetasPage: User state changed:", user);
 
-        if (error) {
-            console.error('Error fetching goals:', error);
-            setErrorMsg(error.message);
-            if (error.code === '42P01') { // undefined_table
-                setErrorMsg("Tabela 'goals' não encontrada. Execute o script SQL.");
+        // Timeout watchdog
+        const timer = setTimeout(() => {
+            if (loading && !user) {
+                console.warn("MetasPage: User load timeout.");
+                setLoading(false);
+                setErrorMsg("Tempo limite excedido. Usuário não identificado. Tente recarregar.");
+            } else if (loading) {
+                console.warn("MetasPage: Data fetch timeout.");
+                // Don't force stop here, maybe it's just slow?
+                // But if it's "bugou", it's stuck.
+                // let's show an error.
+                setErrorMsg("O carregamento está demorando muito. Verifique a conexão.");
+                setLoading(false);
             }
-        } else {
-            setGoals(data || []);
-            setErrorMsg(null);
+        }, 8000); // 8 seconds timeout
+
+        return () => clearTimeout(timer);
+    }, [user, loading]);
+
+    const fetchGoals = async () => {
+        console.log("fetchGoals called. User:", user);
+        if (!user) return;
+
+        setLoading(true);
+        setErrorMsg(null);
+
+        try {
+            const { data, error } = await supabase
+                .from('goals')
+                .select('*')
+                .order('created_at', { ascending: true });
+
+            if (error) {
+                console.error('Error fetching goals:', error);
+                setErrorMsg(error.message);
+                if (error.code === '42P01') {
+                    setErrorMsg("Tabela 'goals' não encontrada. Execute o script SQL.");
+                }
+            } else {
+                console.log("Goals fetched successfully:", data?.length);
+                setGoals(data || []);
+            }
+        } catch (err) {
+            console.error("Unexpected error:", err);
+            setErrorMsg(err.message);
+        } finally {
+            setLoading(false);
         }
-        setLoading(false);
     };
 
     useEffect(() => {
