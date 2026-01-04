@@ -21,12 +21,14 @@ export function TaskDetailsSheet({ isOpen, onClose, task, onSave, onDelete }) {
     const [time, setTime] = useState(''); // HH:MM
     const [isHabit, setIsHabit] = useState(false);
     const [reminder, setReminder] = useState(false);
+    const [subtasks, setSubtasks] = useState([]); // Subtasks state
 
     useEffect(() => {
         if (task) {
             setTitle(task.title || '');
             setDescription(task.description || '');
             setIsHabit(task.is_habit || false);
+            setSubtasks(task.subtasks || []); // Load subtasks
 
             // Parse timestamps
             if (task.start_at) {
@@ -51,6 +53,7 @@ export function TaskDetailsSheet({ isOpen, onClose, task, onSave, onDelete }) {
             setDate(new Date().toISOString().split('T')[0]);
             setTime('');
             setReminder(false);
+            setSubtasks([]);
         }
     }, [task, isOpen]);
 
@@ -75,6 +78,7 @@ export function TaskDetailsSheet({ isOpen, onClose, task, onSave, onDelete }) {
             is_habit: isHabit,
             start_at: startAt,
             reminder_minutes: reminder ? 30 : null, // Default 30 min reminder
+            subtasks: subtasks,
             // If editing existing
             ...(task?.id ? { id: task.id } : {})
         };
@@ -141,6 +145,60 @@ export function TaskDetailsSheet({ isOpen, onClose, task, onSave, onDelete }) {
                             <span className="text-xs text-muted-foreground">Avisar 30 min antes</span>
                         </div>
                         <Switch id="reminder" checked={reminder} onCheckedChange={setReminder} />
+                    </div>
+
+                    {/* Subtasks / Checklist */}
+                    <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                            <Label>Checklist (Sub-tarefas)</Label>
+                            <span className="text-xs text-muted-foreground">
+                                {subtasks.filter(s => s.completed).length}/{subtasks.length}
+                            </span>
+                        </div>
+
+                        <div className="space-y-2">
+                            {subtasks.map((sub, index) => (
+                                <div key={index} className="flex items-center gap-2 group animate-in slide-in-from-left-2 duration-300">
+                                    <Switch
+                                        checked={sub.completed}
+                                        onCheckedChange={(checked) => {
+                                            const newSub = [...subtasks];
+                                            newSub[index].completed = checked;
+                                            setSubtasks(newSub);
+                                        }}
+                                        className="scale-75"
+                                    />
+                                    <Input
+                                        value={sub.title}
+                                        onChange={(e) => {
+                                            const newSub = [...subtasks];
+                                            newSub[index].title = e.target.value;
+                                            setSubtasks(newSub);
+                                        }}
+                                        className="h-8 text-sm bg-secondary/10 border-none focus-visible:ring-1"
+                                        placeholder="Item da lista..."
+                                    />
+                                    <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                                        onClick={() => {
+                                            setSubtasks(subtasks.filter((_, i) => i !== index));
+                                        }}
+                                    >
+                                        <Trash2 className="w-3 h-3 text-muted-foreground hover:text-destructive" />
+                                    </Button>
+                                </div>
+                            ))}
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="w-full text-xs border-dashed text-muted-foreground hover:text-primary"
+                                onClick={() => setSubtasks([...subtasks, { title: '', completed: false }])}
+                            >
+                                + Adicionar item
+                            </Button>
+                        </div>
                     </div>
 
                     <div className="space-y-2">

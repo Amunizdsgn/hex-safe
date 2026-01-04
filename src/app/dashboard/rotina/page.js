@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Check, Trash2, Calendar as CalendarIcon, Repeat, Flame, Trophy, ListTodo, CalendarDays, Columns } from 'lucide-react';
+import { Plus, Check, Trash2, Calendar as CalendarIcon, Repeat, Flame, Trophy, ListTodo, CalendarDays, Columns, Droplets, Minus } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -23,6 +23,8 @@ export default function RoutinePage() {
     // Data State
     const [tasks, setTasks] = useState([]);
     const [habits, setHabits] = useState([]);
+    const [waterIntake, setWaterIntake] = useState(0);
+    const [waterGoal, setWaterGoal] = useState(2000);
     const [loading, setLoading] = useState(true);
 
     // UI State
@@ -57,8 +59,27 @@ export default function RoutinePage() {
         setLoading(false);
     };
 
+    const fetchWater = async () => {
+        if (!user) return;
+        const today = new Date().toISOString().split('T')[0];
+        const { data, error } = await supabase
+            .from('water_logs')
+            .select('*')
+            .eq('user_id', user.id)
+            .eq('date', today)
+            .single();
+
+        if (data) {
+            setWaterIntake(data.amount_ml);
+            setWaterGoal(data.daily_goal_ml);
+        } else {
+            setWaterIntake(0);
+        }
+    };
+
     useEffect(() => {
         fetchRoutine();
+        fetchWater();
     }, [user]);
 
     // --- Actions ---
@@ -221,6 +242,29 @@ export default function RoutinePage() {
         }
     };
 
+    const handleAddWater = async (amount) => {
+        if (!user) return;
+
+        const newAmount = Math.max(0, waterIntake + amount);
+        setWaterIntake(newAmount); // Optimistic
+
+        const today = new Date().toISOString().split('T')[0];
+
+        // Upsert logic handled by DB unique constraint or simple select-then-update
+        // Using upsert with conflict on (user_id, date)
+        const { error } = await supabase.from('water_logs').upsert({
+            user_id: user.id,
+            date: today,
+            amount_ml: newAmount,
+            daily_goal_ml: waterGoal
+        }, { onConflict: 'user_id, date' });
+
+        if (error) {
+            console.error('Error updating water:', error);
+            fetchWater(); // Revert on error
+        }
+    };
+
     // --- Interactions ---
 
     const openNewTaskSheet = () => {
@@ -330,6 +374,58 @@ export default function RoutinePage() {
                                 <Flame className="w-5 h-5 text-orange-500" />
                                 Hábitos Diários
                             </h3>
+
+                            {/* Water Tracker - Compact */}
+                            <div className="glass-card p-4 rounded-xl border border-blue-500/20 bg-blue-500/5 relative overflow-hidden">
+                                <div className="absolute top-0 right-0 p-4 opacity-10">
+                                    <Droplets className="w-24 h-24 text-blue-500" />
+                                </div>
+                                <div className="relative z-10">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-2 text-blue-400">
+                                            <Droplets className="w-5 h-5" />
+                                            <h4 className="font-semibold">Hidratação</h4>
+                                        </div>
+                                        <span className="text-2xl font-bold text-foreground">
+                                            {(waterIntake / 1000).toFixed(1)}<span className="text-sm font-normal text-muted-foreground">/{waterGoal / 1000}L</span>
+                                        </span>
+                                    </div>
+
+                                    <div className="h-2 w-full bg-blue-950 rounded-full overflow-hidden mb-4">
+                                        <div
+                                            className="h-full bg-blue-500 transition-all duration-500 ease-out"
+                                            style={{ width: `${Math.min(100, (waterIntake / waterGoal) * 100)}%` }}
+                                        />
+                                    </div>
+
+                                    <div className="flex gap-2">
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => handleAddWater(250)}
+                                            className="flex-1 border-blue-500/30 hover:bg-blue-500/10 hover:text-blue-400"
+                                        >
+                                            +250ml
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => handleAddWater(500)}
+                                            className="flex-1 border-blue-500/30 hover:bg-blue-500/10 hover:text-blue-400"
+                                        >
+                                            +500ml
+                                        </Button>
+                                        <Button
+                                            size="icon"
+                                            variant="ghost"
+                                            onClick={() => handleAddWater(-250)}
+                                            className="text-muted-foreground hover:text-destructive"
+                                        >
+                                            <Minus className="w-4 h-4" />
+                                        </Button>
+                                    </div>
+                                </div>
+                            </div>
 
                             <div className="space-y-2">
                                 {habits.length === 0 && <p className="text-sm text-muted-foreground italic">Nenhum hábito cadastrado.</p>}

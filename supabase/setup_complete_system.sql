@@ -127,6 +127,8 @@ create table if not exists public.tasks (
   
   due_date date,
   priority text default 'medium',
+  status text default 'pending', -- Nova coluna
+  subtasks jsonb default '[]'::jsonb, -- Nova coluna para checklists
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
@@ -135,6 +137,9 @@ alter table public.tasks add column if not exists end_at timestamp with time zon
 alter table public.tasks add column if not exists is_all_day boolean default false;
 alter table public.tasks add column if not exists location text;
 alter table public.tasks add column if not exists reminder_minutes integer;
+-- Correções solicitadas
+alter table public.tasks add column if not exists status text default 'pending';
+alter table public.tasks add column if not exists subtasks jsonb default '[]'::jsonb;
 
 alter table public.tasks enable row level security;
 drop policy if exists "Users can view own tasks" on public.tasks;
@@ -264,5 +269,27 @@ create policy "Users can insert own deals" on public.deals for insert with check
 create policy "Users can update own deals" on public.deals for update using (auth.uid() = user_id);
 create policy "Users can delete own deals" on public.deals for delete using (auth.uid() = user_id);
 
--- 11. Conclusão
--- Tudo atualizado.
+-- 12. Rotina: Hidratação (Water Logs)
+create table if not exists public.water_logs (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  date date default current_date,
+  amount_ml integer default 0,
+  daily_goal_ml integer default 2000,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  unique(user_id, date) -- Uma entrada por dia por usuário
+);
+
+alter table public.water_logs enable row level security;
+drop policy if exists "Users can view own water logs" on public.water_logs;
+drop policy if exists "Users can insert own water logs" on public.water_logs;
+drop policy if exists "Users can update own water logs" on public.water_logs;
+drop policy if exists "Users can delete own water logs" on public.water_logs;
+
+create policy "Users can view own water logs" on public.water_logs for select using (auth.uid() = user_id);
+create policy "Users can insert own water logs" on public.water_logs for insert with check (auth.uid() = user_id);
+create policy "Users can update own water logs" on public.water_logs for update using (auth.uid() = user_id);
+create policy "Users can delete own water logs" on public.water_logs for delete using (auth.uid() = user_id);
+ 
+-- 13. Conclusão
+-- Tudo atualizado (Status, Subtasks e Água).
