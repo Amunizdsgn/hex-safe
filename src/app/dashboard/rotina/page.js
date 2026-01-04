@@ -11,6 +11,9 @@ import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { useFinancialContext } from '@/contexts/FinancialContext';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { ListTodo, CalendarDays, Columns, Droplets, Minus, Settings } from 'lucide-react';
+import { Label } from "@/components/ui/label";
 
 import { RoutineCalendar } from '@/components/routine/RoutineCalendar';
 import { TaskDetailsSheet } from '@/components/routine/TaskDetailsSheet';
@@ -26,6 +29,12 @@ export default function RoutinePage() {
     const [waterIntake, setWaterIntake] = useState(0);
     const [waterGoal, setWaterGoal] = useState(2000);
     const [loading, setLoading] = useState(true);
+
+    // Dialogs State
+    const [isWaterDialogOpen, setIsWaterDialogOpen] = useState(false);
+    const [customWaterAmount, setCustomWaterAmount] = useState('');
+    const [isGoalDialogOpen, setIsGoalDialogOpen] = useState(false);
+    const [tempGoal, setTempGoal] = useState(2000);
 
     // UI State
     const [newTask, setNewTask] = useState('');
@@ -62,18 +71,24 @@ export default function RoutinePage() {
     const fetchWater = async () => {
         if (!user) return;
         const today = new Date().toISOString().split('T')[0];
-        const { data, error } = await supabase
-            .from('water_logs')
-            .select('*')
-            .eq('user_id', user.id)
-            .eq('date', today)
-            .single();
 
-        if (data) {
-            setWaterIntake(data.amount_ml);
-            setWaterGoal(data.daily_goal_ml);
-        } else {
-            setWaterIntake(0);
+        try {
+            const [logRes, profileRes] = await Promise.all([
+                supabase.from('water_logs').select('*').eq('user_id', user.id).eq('date', today).single(),
+                supabase.from('profiles').select('daily_water_goal').eq('id', user.id).single()
+            ]);
+
+            const profileGoal = profileRes.data?.daily_water_goal || 2000;
+
+            if (logRes.data) {
+                setWaterIntake(logRes.data.amount_ml);
+                setWaterGoal(logRes.data.daily_goal_ml || profileGoal);
+            } else {
+                setWaterIntake(0);
+                setWaterGoal(profileGoal);
+            }
+        } catch (error) {
+            console.error('Error fetching water:', error);
         }
     };
 
@@ -244,14 +259,11 @@ export default function RoutinePage() {
 
     const handleAddWater = async (amount) => {
         if (!user) return;
-
         const newAmount = Math.max(0, waterIntake + amount);
         setWaterIntake(newAmount); // Optimistic
 
         const today = new Date().toISOString().split('T')[0];
 
-        // Upsert logic handled by DB unique constraint or simple select-then-update
-        // Using upsert with conflict on (user_id, date)
         const { error } = await supabase.from('water_logs').upsert({
             user_id: user.id,
             date: today,
@@ -260,9 +272,41 @@ export default function RoutinePage() {
         }, { onConflict: 'user_id, date' });
 
         if (error) {
-            console.error('Error updating water:', error);
-            fetchWater(); // Revert on error
+            console.error("Erro ao salvar água:", error);
+            fetchWater(); // Revert
         }
+    };
+
+    const handleAddCustomWater = () => {
+        const amount = parseInt(customWaterAmount);
+        if (amount && amount > 0) {
+            handleAddWater(amount);
+            setCustomWaterAmount('');
+            setIsWaterDialogOpen(false);
+        }
+    };
+
+    const handleSaveGoal = async () => {
+        if (!user) return;
+        const newGoal = parseInt(tempGoal);
+        if (!newGoal || newGoal <= 0) return;
+
+        setWaterGoal(newGoal); // Optimistic
+        setIsGoalDialogOpen(false);
+
+        // Update Profile (Persistent)
+        await supabase.from('profiles').update({ daily_water_goal: newGoal }).eq('id', user.id);
+
+        // Update Today's Log
+        const today = new Date().toISOString().split('T')[0];
+        const { error } = await supabase.from('water_logs').upsert({
+            user_id: user.id,
+            date: today,
+            amount_ml: waterIntake,
+            daily_goal_ml: newGoal
+        }, { onConflict: 'user_id, date' });
+
+        if (error) console.error("Error saving goal:", error);
     };
 
     // --- Interactions ---
@@ -385,6 +429,9 @@ export default function RoutinePage() {
                                         <div className="flex items-center gap-2 text-blue-400">
                                             <Droplets className="w-5 h-5" />
                                             <h4 className="font-semibold">Hidratação</h4>
+                                            <Button variant="ghost" size="icon" className="h-6 w-6 text-blue-400/50 hover:text-blue-400" onClick={() => { setTempGoal(waterGoal); setIsGoalDialogOpen(true); }}>
+                                                <Settings className="w-3 h-3" />
+                                            </Button>
                                         </div>
                                         <span className="text-2xl font-bold text-foreground">
                                             {(waterIntake / 1000).toFixed(1)}<span className="text-sm font-normal text-muted-foreground">/{waterGoal / 1000}L</span>
@@ -415,6 +462,31 @@ export default function RoutinePage() {
                                         >
                                             +500ml
                                         </Button>
+                                        <Dialog open={isWaterDialogOpen} onOpenChange={setIsWaterDialogOpen}>
+                                            <DialogTrigger asChild>
+                                                <Button size="sm" variant="outline" className="flex-1 border-blue-500/30 border-dashed hover:bg-blue-500/10 hover:text-blue-400">
+                                                    Outro
+                                                </Button>
+                                            </DialogTrigger>
+                                            <DialogContent>
+                                                <DialogHeader>
+                                                    <DialogTitle>Adicionar Água</DialogTitle>
+                                                </DialogHeader>
+                                                <div className="py-4">
+                                                    <Label>Quantidade (ml)</Label>
+                                                    <Input
+                                                        type="number"
+                                                        value={customWaterAmount}
+                                                        onChange={e => setCustomWaterAmount(e.target.value)}
+                                                        placeholder="Ex: 300"
+                                                        autoFocus
+                                                    />
+                                                </div>
+                                                <DialogFooter>
+                                                    <Button onClick={handleAddCustomWater}>Adicionar</Button>
+                                                </DialogFooter>
+                                            </DialogContent>
+                                        </Dialog>
                                         <Button
                                             size="icon"
                                             variant="ghost"
@@ -596,6 +668,27 @@ export default function RoutinePage() {
                 onSave={handleSaveTask}
                 onDelete={handleDeleteTask}
             />
+
+            <Dialog open={isGoalDialogOpen} onOpenChange={setIsGoalDialogOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Configurar Meta Diária</DialogTitle>
+                    </DialogHeader>
+                    <div className="py-4">
+                        <Label>Meta de Água (ml)</Label>
+                        <Input
+                            type="number"
+                            value={tempGoal}
+                            onChange={e => setTempGoal(e.target.value)}
+                            placeholder="Ex: 2000"
+                        />
+                        <p className="text-xs text-muted-foreground mt-2">Isso atualizará sua meta padrão.</p>
+                    </div>
+                    <DialogFooter>
+                        <Button onClick={handleSaveGoal}>Salvar Meta</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

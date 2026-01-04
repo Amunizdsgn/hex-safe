@@ -14,6 +14,7 @@ create table if not exists public.profiles (
   full_name text,
   avatar_url text,
   plan_type text default 'free',
+  daily_water_goal integer default 2000,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
@@ -280,6 +281,8 @@ create table if not exists public.water_logs (
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   unique(user_id, date) -- Uma entrada por dia por usuário
 );
+
+alter table public.profiles add column if not exists daily_water_goal integer default 2000;
 
 alter table public.water_logs enable row level security;
 drop policy if exists "Users can view own water logs" on public.water_logs;
