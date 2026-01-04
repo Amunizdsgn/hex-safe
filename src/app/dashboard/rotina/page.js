@@ -476,12 +476,26 @@ export default function RoutinePage() {
                             </div>
 
                             <div className="space-y-2">
-                                {tasks.length === 0 && <p className="text-sm text-muted-foreground italic">Nenhuma tarefa pendente.</p>}
-                                {tasks.filter(t => !t.completed).map(task => (
+                                {tasks.filter(t => {
+                                    if (t.completed) return false;
+                                    if (!t.start_at) return true; // Sem data = Backlog (aparece)
+                                    // Compara datas (apenas YYYY-MM-DD)
+                                    const taskDate = new Date(t.start_at).toISOString().split('T')[0];
+                                    const today = new Date().toISOString().split('T')[0];
+                                    return taskDate <= today;
+                                }).length === 0 && <p className="text-sm text-muted-foreground italic">Nenhuma tarefa para hoje.</p>}
+
+                                {tasks.filter(t => {
+                                    if (t.completed) return false;
+                                    if (!t.start_at) return true;
+                                    const taskDate = new Date(t.start_at).toISOString().split('T')[0];
+                                    const today = new Date().toISOString().split('T')[0];
+                                    return taskDate <= today;
+                                }).map(task => (
                                     <div
                                         key={task.id}
                                         onClick={() => openEditTaskSheet(task)}
-                                        className="cursor-pointer p-3 bg-card border border-border rounded-lg flex items-center justify-between group hover:shadow-md hover:border-primary/40 transition-all"
+                                        className="cursor-pointer p-3 bg-card border border-border rounded-lg flex items-center justify-between group hover:shadow-md hover:border-primary/40 transition-all text-left"
                                     >
                                         <div className="flex items-center gap-3">
                                             <Checkbox
@@ -492,9 +506,18 @@ export default function RoutinePage() {
                                             <div className="flex flex-col">
                                                 <span className="text-sm font-medium">{task.title}</span>
                                                 {task.start_at && (
-                                                    <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                                                    <span className={cn(
+                                                        "text-[10px] flex items-center gap-1",
+                                                        new Date(task.start_at) < new Date().setHours(0, 0, 0, 0) ? "text-red-400" : "text-muted-foreground"
+                                                    )}>
                                                         <CalendarIcon className="w-3 h-3" />
                                                         {format(new Date(task.start_at), "dd/MM 'às' HH:mm")}
+                                                    </span>
+                                                )}
+                                                {/* Subtasks progress indicator */}
+                                                {task.subtasks && task.subtasks.length > 0 && (
+                                                    <span className="text-[10px] text-muted-foreground mt-0.5">
+                                                        {task.subtasks.filter(s => s.completed).length}/{task.subtasks.length} sub-tarefas
                                                     </span>
                                                 )}
                                             </div>
@@ -502,10 +525,16 @@ export default function RoutinePage() {
                                     </div>
                                 ))}
 
-                                {tasks.some(t => t.completed) && (
+                                {tasks.some(t => t.completed && (!t.start_at || new Date(t.start_at).toISOString().split('T')[0] <= new Date().toISOString().split('T')[0])) && (
                                     <div className="pt-4 border-t border-border/50 mt-4">
-                                        <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Concluídas</h4>
-                                        {tasks.filter(t => t.completed).map(task => (
+                                        <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Concluídas Hoje</h4>
+                                        {tasks.filter(t => {
+                                            if (!t.completed) return false;
+                                            if (!t.start_at) return true;
+                                            const taskDate = new Date(t.start_at).toISOString().split('T')[0];
+                                            const today = new Date().toISOString().split('T')[0];
+                                            return taskDate === today; // Só concluídas de hoje ou todas? Vamos filtrar por 'hoje' para limpar a view.
+                                        }).map(task => (
                                             <div
                                                 key={task.id}
                                                 onClick={() => openEditTaskSheet(task)}
