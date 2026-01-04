@@ -284,6 +284,22 @@ create table if not exists public.water_logs (
 
 alter table public.profiles add column if not exists daily_water_goal integer default 2000;
 
+create table if not exists public.goals (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references auth.users(id) not null,
+  title text not null,
+  is_completed boolean default false,
+  context text check (context in ('pessoal', 'empresa')) not null,
+  year integer default 2026,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+alter table public.goals enable row level security;
+create policy "Users can view own goals" on public.goals for select using (auth.uid() = user_id);
+create policy "Users can insert own goals" on public.goals for insert with check (auth.uid() = user_id);
+create policy "Users can update own goals" on public.goals for update using (auth.uid() = user_id);
+create policy "Users can delete own goals" on public.goals for delete using (auth.uid() = user_id);
+
 alter table public.water_logs enable row level security;
 drop policy if exists "Users can view own water logs" on public.water_logs;
 drop policy if exists "Users can insert own water logs" on public.water_logs;

@@ -13,6 +13,7 @@ import {
     Users,
     Kanban,
     CheckSquare,
+    Target,
 } from 'lucide-react';
 import {
     Sidebar,
@@ -37,6 +38,7 @@ const navItems = [
     { path: '/dashboard/projecoes', label: 'Projeções', icon: LineChart, contexts: ['empresa', 'pessoal', 'consolidado'] },
     { path: '/dashboard/investimentos', label: 'Investimentos', icon: PiggyBank, contexts: ['pessoal', 'consolidado'] },
     { path: '/dashboard/carteiras', label: 'Carteiras', icon: Wallet, contexts: ['empresa', 'pessoal', 'consolidado'] },
+    { path: '/dashboard/metas', label: 'Metas 2026', icon: Target, contexts: ['empresa', 'pessoal', 'consolidado'] },
     { path: '/dashboard/rotina', label: 'Rotina', icon: CheckSquare, contexts: ['pessoal'] },
 ];
 
