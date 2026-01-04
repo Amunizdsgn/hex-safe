@@ -5,14 +5,13 @@ import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Check, Trash2, Calendar as CalendarIcon, Repeat, Flame, Trophy, ListTodo, CalendarDays, Columns, Droplets, Minus } from 'lucide-react';
+import { Plus, Check, Trash2, Calendar as CalendarIcon, Repeat, Flame, Trophy, ListTodo, CalendarDays, Columns, Droplets, Minus, Settings } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { useFinancialContext } from '@/contexts/FinancialContext';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { ListTodo, CalendarDays, Columns, Droplets, Minus, Settings } from 'lucide-react';
 import { Label } from "@/components/ui/label";
 
 import { RoutineCalendar } from '@/components/routine/RoutineCalendar';
