@@ -15,6 +15,7 @@ export default function MetasPage() {
 
     const [goals, setGoals] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [errorMsg, setErrorMsg] = useState(null);
     const [newPersonalGoal, setNewPersonalGoal] = useState('');
     const [newBusinessGoal, setNewBusinessGoal] = useState('');
 
@@ -28,8 +29,13 @@ export default function MetasPage() {
 
         if (error) {
             console.error('Error fetching goals:', error);
+            setErrorMsg(error.message);
+            if (error.code === '42P01') { // undefined_table
+                setErrorMsg("Tabela 'goals' não encontrada. Execute o script SQL.");
+            }
         } else {
             setGoals(data || []);
+            setErrorMsg(null);
         }
         setLoading(false);
     };
@@ -150,6 +156,14 @@ export default function MetasPage() {
             {loading ? (
                 <div className="flex justify-center p-12">
                     <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                </div>
+            ) : errorMsg ? (
+                <div className="p-6 border border-destructive/20 bg-destructive/10 rounded-xl text-destructive">
+                    <h3 className="font-semibold mb-1">Erro ao carregar metas</h3>
+                    <p>{errorMsg}</p>
+                    <Button variant="outline" className="mt-4 border-destructive/30 hover:bg-destructive/20" onClick={fetchGoals}>
+                        Tentar Novamente
+                    </Button>
                 </div>
             ) : (
                 <div className={cn(
