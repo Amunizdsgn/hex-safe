@@ -180,12 +180,11 @@ create table if not exists public.services (
   user_id uuid references public.profiles(id) on delete cascade not null,
   name text not null,
   type text default 'Recorrente',
-  base_price numeric default 0,
+  price numeric(10,2) default 0,
   description text,
   default_checklist jsonb default '[]'::jsonb,
-  deliverables jsonb default '[]'::jsonb,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+  active boolean default true,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 alter table public.services enable row level security;
 drop policy if exists "Users can view own services" on public.services;
@@ -197,6 +196,8 @@ create policy "Users can view own services" on public.services for select using 
 create policy "Users can insert own services" on public.services for insert with check (auth.uid() = user_id);
 create policy "Users can update own services" on public.services for update using (auth.uid() = user_id);
 create policy "Users can delete own services" on public.services for delete using (auth.uid() = user_id);
+
+alter table public.services add column if not exists default_checklist jsonb default '[]'::jsonb;
 
 -- 9. CRM: Clientes (Clients)
 create table if not exists public.clients (
