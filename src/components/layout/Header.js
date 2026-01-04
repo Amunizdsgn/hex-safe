@@ -10,6 +10,8 @@ import { TransactionForm } from '@/components/forms/TransactionForm';
 import { ContextSelector } from './ContextSelector';
 import { useFinancialContext } from '@/contexts/FinancialContext';
 import { cn } from '@/lib/utils';
+import { createClient } from '@/lib/supabase/client';
+import { useRouter } from 'next/navigation';
 
 const contextTitles = {
     empresa: 'Gestão Empresarial',
@@ -30,8 +32,17 @@ export function Header() {
         selectedMonth: globalMonth,
         selectedYear: globalYear,
         setSelectedMonth: setGlobalMonth,
-        setSelectedYear: setGlobalYear
+        setSelectedYear: setGlobalYear,
+        notifications // Get notifications from context
     } = useFinancialContext();
+
+    const router = useRouter();
+    const supabase = createClient();
+
+    const handleLogout = async () => {
+        await supabase.auth.signOut();
+        router.push('/login');
+    };
 
     // Get current date in Salvador-BA timezone (UTC-3)
     const getCurrentDateBR = () => {
@@ -204,24 +215,26 @@ export function Header() {
 
                 {/* Right: Actions */}
                 <div className="flex items-center gap-4">
-                    {/* New Transaction Sheet */}
-                    <Sheet>
-                        <SheetTrigger asChild>
-                            <Button className="gradient-primary gap-2 cursor-pointer shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all hover:scale-105 active:scale-95 duration-200" size="sm">
-                                <PlusCircle className="w-4 h-4" />
-                                <span className="hidden sm:inline">Novo Lançamento</span>
-                            </Button>
-                        </SheetTrigger>
-                        <SheetContent className="w-full sm:max-w-md border-l border-border/50 bg-background/80 backdrop-blur-xl">
-                            <SheetHeader className="mb-6">
-                                <SheetTitle className="text-2xl font-bold">Novo Lançamento</SheetTitle>
-                                <SheetDescription>
-                                    Registre uma receita ou despesa no fluxo de caixa.
-                                </SheetDescription>
-                            </SheetHeader>
-                            <TransactionForm onSuccess={() => { }} />
-                        </SheetContent>
-                    </Sheet>
+                    {/* New Transaction Sheet - Only show in empresa and pessoal contexts */}
+                    {context !== 'consolidado' && (
+                        <Sheet>
+                            <SheetTrigger asChild>
+                                <Button className="gradient-primary gap-2 cursor-pointer shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all hover:scale-105 active:scale-95 duration-200" size="sm">
+                                    <PlusCircle className="w-4 h-4" />
+                                    <span className="hidden sm:inline">Novo Lançamento</span>
+                                </Button>
+                            </SheetTrigger>
+                            <SheetContent className="w-full sm:max-w-md border-l border-border/50 bg-background/80 backdrop-blur-xl">
+                                <SheetHeader className="mb-6">
+                                    <SheetTitle className="text-2xl font-bold">Novo Lançamento</SheetTitle>
+                                    <SheetDescription>
+                                        Registre uma receita ou despesa no fluxo de caixa.
+                                    </SheetDescription>
+                                </SheetHeader>
+                                <TransactionForm onSuccess={() => { }} />
+                            </SheetContent>
+                        </Sheet>
+                    )}
 
                     <ContextSelector />
 
@@ -230,39 +243,43 @@ export function Header() {
                         <DropdownMenuTrigger asChild>
                             <button className="p-2 rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors relative">
                                 <Bell className="w-5 h-5" />
-                                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-destructive rounded-full animate-pulse" />
+                                {notifications && notifications.length > 0 && (
+                                    <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-destructive rounded-full animate-pulse" />
+                                )}
                             </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-80">
                             <DropdownMenuLabel className="flex items-center justify-between">
                                 <span>Notificações</span>
-                                <span className="text-xs text-muted-foreground">3 novas</span>
+                                <span className="text-xs text-muted-foreground">
+                                    {notifications ? notifications.length : 0} novas
+                                </span>
                             </DropdownMenuLabel>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem className="flex flex-col items-start gap-1 p-3 cursor-pointer">
-                                <div className="flex items-center gap-2 w-full">
-                                    <div className="w-2 h-2 bg-destructive rounded-full" />
-                                    <span className="text-sm font-medium">Conta vencida</span>
-                                    <span className="text-xs text-muted-foreground ml-auto">Há 2h</span>
-                                </div>
-                                <p className="text-xs text-muted-foreground pl-4">Impostos - R$ 1.500,00</p>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem className="flex flex-col items-start gap-1 p-3 cursor-pointer">
-                                <div className="flex items-center gap-2 w-full">
-                                    <div className="w-2 h-2 bg-warning rounded-full" />
-                                    <span className="text-sm font-medium">Pagamento pendente</span>
-                                    <span className="text-xs text-muted-foreground ml-auto">Ontem</span>
-                                </div>
-                                <p className="text-xs text-muted-foreground pl-4">Manutenção Mensal - R$ 5.000,00</p>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem className="flex flex-col items-start gap-1 p-3 cursor-pointer">
-                                <div className="flex items-center gap-2 w-full">
-                                    <div className="w-2 h-2 bg-success rounded-full" />
-                                    <span className="text-sm font-medium">Receita confirmada</span>
-                                    <span className="text-xs text-muted-foreground ml-auto">2 dias</span>
-                                </div>
-                                <p className="text-xs text-muted-foreground pl-4">Projeto App Mobile - R$ 25.000,00</p>
-                            </DropdownMenuItem>
+
+                            <div className="max-h-[300px] overflow-y-auto">
+                                {!notifications || notifications.length === 0 ? (
+                                    <div className="p-4 text-center text-sm text-muted-foreground">
+                                        Nenhuma notificação nova
+                                    </div>
+                                ) : (
+                                    notifications.map((notif) => (
+                                        <DropdownMenuItem key={notif.id} className="flex flex-col items-start gap-1 p-3 cursor-pointer">
+                                            <div className="flex items-center gap-2 w-full">
+                                                <div className={cn("w-2 h-2 rounded-full",
+                                                    notif.type === 'destructive' ? "bg-destructive" :
+                                                        notif.type === 'warning' ? "bg-warning" :
+                                                            "bg-success"
+                                                )} />
+                                                <span className="text-sm font-medium">{notif.title}</span>
+                                                <span className="text-xs text-muted-foreground ml-auto">{notif.time}</span>
+                                            </div>
+                                            <p className="text-xs text-muted-foreground pl-4">{notif.message}</p>
+                                        </DropdownMenuItem>
+                                    ))
+                                )}
+                            </div>
+
                             <DropdownMenuSeparator />
                             <DropdownMenuItem className="text-center text-xs text-primary cursor-pointer justify-center">
                                 Ver todas as notificações
@@ -296,7 +313,7 @@ export function Header() {
                                 Ajuda
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem className="cursor-pointer text-destructive">
+                            <DropdownMenuItem className="cursor-pointer text-destructive" onClick={handleLogout}>
                                 Sair
                             </DropdownMenuItem>
                         </DropdownMenuContent>

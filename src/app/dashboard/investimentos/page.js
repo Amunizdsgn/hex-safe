@@ -3,21 +3,19 @@
 import { useState } from 'react';
 import { TrendingUp, Lock, Zap, Search, SlidersHorizontal, ArrowUpRight, ArrowDownRight, PlusCircle, Trash2, Edit } from 'lucide-react';
 import { useFinancialContext } from '@/contexts/FinancialContext';
-import { formatCurrency, formatPercent, portfolioHistory, currencyRates, assetOperations } from '@/data/mockData';
+import { formatCurrency, formatPercent } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { InvestmentAlerts } from '@/components/dashboard/investments/InvestmentAlerts';
 import { InvestmentGoals } from '@/components/dashboard/investments/InvestmentGoals';
-import { ComparativeChart } from '@/components/dashboard/investments/ComparativeChart';
 import { RiskAnalysis } from '@/components/dashboard/investments/RiskAnalysis';
-import { CurrencyModule } from '@/components/dashboard/investments/CurrencyModule';
-import { OperationalHistory } from '@/components/dashboard/investments/OperationalHistory';
-import { AdvancedMetrics } from '@/components/dashboard/investments/AdvancedMetrics';
+import { CurrencyRates } from '@/components/dashboard/investments/CurrencyRates';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger } from '@/components/ui/sheet';
 import { InvestmentForm } from '@/components/forms/InvestmentForm';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 // Reuse existing charts logic where applicable
 const typeLabels = {
@@ -44,10 +42,48 @@ export default function InvestmentsPage() {
     const [editingInvestment, setEditingInvestment] = useState(null);
     const [investmentToDelete, setInvestmentToDelete] = useState(null);
 
-    // Filter Investments
-    const filteredInvestments = context === 'consolidado'
+    // Filter states
+    const [filterType, setFilterType] = useState('all');
+    const [filterLiquidity, setFilterLiquidity] = useState('all');
+    const [filterPeriod, setFilterPeriod] = useState('all'); // 'all', '30d', '90d', 'year'
+
+    // Filter Investments by context and filters
+    let filteredInvestments = context === 'consolidado'
         ? investments
         : investments.filter(i => i.origem === context);
+
+    // Apply type filter
+    if (filterType !== 'all') {
+        filteredInvestments = filteredInvestments.filter(i => i.tipo === filterType);
+    }
+
+    // Apply liquidity filter
+    if (filterLiquidity !== 'all') {
+        filteredInvestments = filteredInvestments.filter(i => i.liquidez === filterLiquidity);
+    }
+
+    // Apply period filter (based on creation date if available)
+    if (filterPeriod !== 'all' && filteredInvestments.length > 0) {
+        const now = new Date();
+        const cutoffDate = new Date();
+
+        switch (filterPeriod) {
+            case '30d':
+                cutoffDate.setDate(now.getDate() - 30);
+                break;
+            case '90d':
+                cutoffDate.setDate(now.getDate() - 90);
+                break;
+            case 'year':
+                cutoffDate.setFullYear(now.getFullYear() - 1);
+                break;
+        }
+
+        filteredInvestments = filteredInvestments.filter(i => {
+            if (!i.created_at) return true; // Include if no date
+            return new Date(i.created_at) >= cutoffDate;
+        });
+    }
 
     const totalInvested = filteredInvestments.reduce((sum, i) => sum + (i.valorAplicado || 0), 0);
     const totalCurrent = filteredInvestments.reduce((sum, i) => sum + (i.valorAtual || 0), 0);
@@ -173,22 +209,145 @@ export default function InvestmentsPage() {
                 </div>
             </div>
 
+            {/* Filters */}
+            <div className="glass-card rounded-xl p-4">
+                <div className="flex flex-wrap items-center gap-4">
+                    <div className="flex items-center gap-2">
+                        <SlidersHorizontal className="w-4 h-4 text-muted-foreground" />
+                        <span className="text-sm font-medium text-foreground">Filtros:</span>
+                    </div>
+
+                    <div className="flex flex-wrap gap-3">
+                        {/* Period Filter */}
+                        <Select value={filterPeriod} onValueChange={setFilterPeriod}>
+                            <SelectTrigger className="w-[140px] h-9">
+                                <SelectValue placeholder="Período" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">Todos</SelectItem>
+                                <SelectItem value="30d">Últimos 30 dias</SelectItem>
+                                <SelectItem value="90d">Últimos 90 dias</SelectItem>
+                                <SelectItem value="year">Último ano</SelectItem>
+                            </SelectContent>
+                        </Select>
+
+                        {/* Type Filter */}
+                        <Select value={filterType} onValueChange={setFilterType}>
+                            <SelectTrigger className="w-[150px] h-9">
+                                <SelectValue placeholder="Tipo" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">Todos os tipos</SelectItem>
+                                <SelectItem value="renda_fixa">Renda Fixa</SelectItem>
+                                <SelectItem value="renda_variavel">Renda Variável</SelectItem>
+                                <SelectItem value="cripto">Cripto</SelectItem>
+                                <SelectItem value="fundo">Fundos</SelectItem>
+                                <SelectItem value="outro">Outros</SelectItem>
+                            </SelectContent>
+                        </Select>
+
+                        {/* Liquidity Filter */}
+                        <Select value={filterLiquidity} onValueChange={setFilterLiquidity}>
+                            <SelectTrigger className="w-[150px] h-9">
+                                <SelectValue placeholder="Liquidez" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">Todas</SelectItem>
+                                <SelectItem value="imediata">Imediata</SelectItem>
+                                <SelectItem value="curto_prazo">Curto Prazo</SelectItem>
+                                <SelectItem value="longo_prazo">Longo Prazo</SelectItem>
+                            </SelectContent>
+                        </Select>
+
+                        {/* Clear Filters */}
+                        {(filterPeriod !== 'all' || filterType !== 'all' || filterLiquidity !== 'all') && (
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                    setFilterPeriod('all');
+                                    setFilterType('all');
+                                    setFilterLiquidity('all');
+                                }}
+                                className="h-9 text-xs"
+                            >
+                                Limpar Filtros
+                            </Button>
+                        )}
+                    </div>
+
+                    <div className="ml-auto text-xs text-muted-foreground">
+                        {filteredInvestments.length} {filteredInvestments.length === 1 ? 'investimento' : 'investimentos'}
+                    </div>
+                </div>
+            </div>
+
             <InvestmentAlerts investments={filteredInvestments} />
 
             {/* View Content */}
             {viewMode === 'dashboard' && (
                 <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        <div className="lg:col-span-2 space-y-6">
-                            <ComparativeChart data={portfolioHistory} />
-                            <CurrencyModule rates={currencyRates} />
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Allocation by Type */}
+                        <div className="glass-card rounded-xl p-6">
+                            <h3 className="text-lg font-semibold text-foreground mb-6">Alocação por Tipo</h3>
+                            {typeData.length > 0 ? (
+                                <>
+                                    <div className="h-72">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <PieChart>
+                                                <Pie data={typeData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={2} dataKey="value">
+                                                    {typeData.map((_, index) => <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />)}
+                                                </Pie>
+                                                <Tooltip contentStyle={{ backgroundColor: '#0B1111', borderRadius: '8px', border: '1px solid #333' }} formatter={(value) => [formatCurrency(value), '']} />
+                                            </PieChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                    <div className="flex flex-wrap justify-center gap-4 mt-4">
+                                        {typeData.map((item, index) => (
+                                            <div key={item.name} className="flex items-center gap-2">
+                                                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: colors[index % colors.length] }} />
+                                                <span className="text-xs text-muted-foreground">{item.name}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="h-72 flex items-center justify-center">
+                                    <p className="text-muted-foreground text-sm">Nenhum investimento cadastrado</p>
+                                </div>
+                            )}
                         </div>
-                        <div className="space-y-6">
-                            <InvestmentGoals currentAmount={totalCurrent} />
-                            <RiskAnalysis investments={filteredInvestments} />
+
+                        {/* Allocation by Liquidity */}
+                        <div className="glass-card rounded-xl p-6">
+                            <h3 className="text-lg font-semibold text-foreground mb-6">Alocação por Liquidez</h3>
+                            {liquidityData.length > 0 ? (
+                                <div className="h-72">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart data={liquidityData} layout="vertical">
+                                            <CartesianGrid strokeDasharray="3 3" stroke="#2A3333" horizontal={true} vertical={false} />
+                                            <XAxis type="number" stroke="#9CB0B1" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `${(v / 1000)}k`} />
+                                            <YAxis type="category" dataKey="name" stroke="#9CB0B1" fontSize={12} tickLine={false} axisLine={false} width={100} />
+                                            <Tooltip contentStyle={{ backgroundColor: '#0B1111', borderRadius: '8px', border: '1px solid #333' }} formatter={(value) => [formatCurrency(value), '']} />
+                                            <Bar dataKey="value" fill="#01B8BE" radius={[0, 4, 4, 0]} />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            ) : (
+                                <div className="h-72 flex items-center justify-center">
+                                    <p className="text-muted-foreground text-sm">Nenhum investimento cadastrado</p>
+                                </div>
+                            )}
                         </div>
                     </div>
-                    <AdvancedMetrics />
+
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div className="lg:col-span-2">
+                            <InvestmentGoals currentAmount={totalCurrent} />
+                        </div>
+                        <RiskAnalysis investments={filteredInvestments} />
+                    </div>
                 </div>
             )}
 
@@ -280,8 +439,6 @@ export default function InvestmentsPage() {
                             </table>
                         </div>
                     </div>
-
-                    <OperationalHistory history={assetOperations} />
                 </div>
             )}
 
@@ -376,8 +533,10 @@ export default function InvestmentsPage() {
                         </div>
                     </div>
                 </div>
-            )
-            }
-        </div >
+            )}
+
+            {/* Currency Rates - Always visible at bottom */}
+            <CurrencyRates />
+        </div>
     );
 }

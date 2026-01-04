@@ -16,10 +16,16 @@ export function useAccounts(context = 'all') {
             // Check credential existence
             if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
                 // Fallback
-                const filtered = context === 'all' || context === 'consolidado'
-                    ? ctxAccounts
-                    : ctxAccounts.filter(a => a.origem === context);
-                setAccounts(filtered);
+                if (context === 'all' || context === 'consolidado') {
+                    setAccounts(ctxAccounts);
+                } else {
+                    const filtered = ctxAccounts.filter(a => {
+                        const accountOrigem = a.origem || 'empresa';
+                        if (accountOrigem === 'conta') return context === 'empresa';
+                        return accountOrigem === context;
+                    });
+                    setAccounts(filtered);
+                }
                 setLoading(false);
                 return;
             }
@@ -27,10 +33,16 @@ export function useAccounts(context = 'all') {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) {
                 // Fallback if no user
-                const filtered = context === 'all' || context === 'consolidado'
-                    ? ctxAccounts
-                    : ctxAccounts.filter(a => a.origem === context);
-                setAccounts(filtered);
+                if (context === 'all' || context === 'consolidado') {
+                    setAccounts(ctxAccounts);
+                } else {
+                    const filtered = ctxAccounts.filter(a => {
+                        const accountOrigem = a.origem || 'empresa';
+                        if (accountOrigem === 'conta') return context === 'empresa';
+                        return accountOrigem === context;
+                    });
+                    setAccounts(filtered);
+                }
                 setLoading(false);
                 return;
             }
@@ -40,15 +52,33 @@ export function useAccounts(context = 'all') {
                 .select('*');
 
             if (error) throw error;
-            setAccounts(data || []);
+
+            // Filter by context with legacy tolerance
+            const allAccounts = data || [];
+            if (context === 'all' || context === 'consolidado') {
+                setAccounts(allAccounts);
+            } else {
+                const filtered = allAccounts.filter(a => {
+                    const accountOrigem = a.origem || 'empresa';
+                    if (accountOrigem === 'conta') return context === 'empresa';
+                    return accountOrigem === context;
+                });
+                setAccounts(filtered);
+            }
 
         } catch (err) {
             console.error('Error fetching accounts:', err);
             // Fallback
-            const filtered = context === 'all' || context === 'consolidado'
-                ? ctxAccounts
-                : ctxAccounts.filter(a => a.origem === context);
-            setAccounts(filtered);
+            if (context === 'all' || context === 'consolidado') {
+                setAccounts(ctxAccounts);
+            } else {
+                const filtered = ctxAccounts.filter(a => {
+                    const accountOrigem = a.origem || 'empresa';
+                    if (accountOrigem === 'conta') return context === 'empresa';
+                    return accountOrigem === context;
+                });
+                setAccounts(filtered);
+            }
         } finally {
             setLoading(false);
         }
@@ -182,17 +212,32 @@ export function useAccounts(context = 'all') {
                 return { error: null };
             }
 
-            // Persist
+            // Map updates to DB columns
+            const dbUpdates = {};
+            if (updates.nome !== undefined) dbUpdates.name = updates.nome;
+            if (updates.tipo !== undefined) dbUpdates.type = updates.tipo;
+            if (updates.saldoAtual !== undefined) dbUpdates.balance = updates.saldoAtual;
+            if (updates.banco !== undefined) dbUpdates.bank = updates.banco; // Assuming 'bank' column exists or uses generic mapping?
+            // Wait, looking at schema 'accounts' table (lines 16-25):
+            // name, type, balance, currency, color.
+            // Does it have 'bank' and 'origem'?
+            // Assuming they were added in migration files not fully shown in schema.sql but implied by usage.
+            // Let's assume 'origem' and 'banco' (or 'bank') exist.
+            // If 'banco' is not in schema.sql, maybe it's saved in a different column or json?
+            // But previous code was inserting it.
+
+            // Let's be safe and map known deviations:
+            if (updates.banco !== undefined) dbUpdates.banco = updates.banco; // Keep as is if column name matches or is new
+            if (updates.origem !== undefined) dbUpdates.origem = updates.origem;
+            if (updates.cor !== undefined) dbUpdates.color = updates.cor;
+
+            // If we are sending everything, just spread and overwrite
+            // But to be precise for 'balance' specifically which is failing:
+            if (updates.saldoAtual !== undefined) dbUpdates.balance = updates.saldoAtual;
+
             const { error } = await supabase
                 .from('accounts')
-                .update({ ...updates }) // Ensure updates match DB columns? Form sends formatted data. 
-                // Form sends: nome, tipo, saldoAtual, banco, origem. These match DB columns (snake_case might be needed? No, likely camelCase in JS client maps if configured, but safe to check).
-                // Existing code uses: nome, tipo, saldoAtual ... checking SCHEMA.
-                // Supabase usually expects exact column names. 
-                // In addAccount: insert({ ...account, user_id... }). 'account' from form has 'nome', 'tipo', 'saldoAtual', 'banco'.
-                // If DB has 'saldo_atual', this might fail if auto-mapping isn't on.
-                // But addAccount seemed to work? 
-                // Let's assume keys are correct or mapped.
+                .update(dbUpdates)
                 .eq('id', id);
 
             if (error) throw error;

@@ -30,54 +30,71 @@ export default function DashboardPage() {
 
   // --- DYNAMIC CALCULATIONS ---
 
-  // 1. Company Financials (Current Month)
-  const companyTransactions = transactions.filter(t => t.origem === 'empresa' || t.origem === 'conta'); // Handle 'conta' legacy?
+  // Filter transactions by context
+  const contextTransactions = useMemo(() => {
+    if (context === 'consolidado') return transactions;
 
-  const currentMonthTransactions = companyTransactions.filter(t => {
-    const d = new Date(t.date);
-    return d.getMonth() === selectedMonth && d.getFullYear() === selectedYear;
-  });
+    return transactions.filter(t => {
+      // Fallback: if no origem field, assume 'empresa' (legacy)
+      const transactionOrigem = t.origem || 'empresa';
 
-  const companyRev = currentMonthTransactions
-    .filter(t => ['revenue', 'receita', 'income'].includes(t.type) && t.status === 'pago')
-    .reduce((sum, r) => sum + Number(r.valor), 0);
+      // Treat 'conta' as 'empresa' (legacy)
+      if (transactionOrigem === 'conta') return context === 'empresa';
 
-  const companyExp = currentMonthTransactions
-    .filter(t => ['expense', 'despesa', 'saida'].includes(t.type) && (t.status === 'pago')) // Cash Flow focuses on paid? Or Accrual? Let's do Paid for "Cash" dash, or Paid+Overdue for health. Let's stick to Paid for "Realized" result.
-    .reduce((sum, e) => sum + Number(e.valor), 0);
+      return transactionOrigem === context;
+    });
+  }, [transactions, context]);
 
-  const companyProfit = companyRev - companyExp;
-  const profitMargin = companyRev > 0 ? (companyProfit / companyRev) * 100 : 0;
-  const goalDifference = companyRev - monthlyGoal;
+  // Current Month Transactions
+  const currentMonthTransactions = useMemo(() => {
+    return contextTransactions.filter(t => {
+      const d = new Date(t.date);
+      return d.getMonth() === selectedMonth && d.getFullYear() === selectedYear;
+    });
+  }, [contextTransactions, selectedMonth, selectedYear]);
 
-  const overdueCompany = companyTransactions.filter(t =>
-    ['expense', 'despesa', 'saida'].includes(t.type) && t.status === 'vencido'
-  );
-  const overdueTotal = overdueCompany.reduce((sum, e) => sum + Number(e.valor), 0);
+  // Revenue (Receita)
+  const revenue = useMemo(() => {
+    return currentMonthTransactions
+      .filter(t => ['revenue', 'receita', 'income'].includes(t.type) && t.status === 'pago')
+      .reduce((sum, r) => sum + Number(r.valor), 0);
+  }, [currentMonthTransactions]);
+
+  // Expenses (Despesas)
+  const expenses = useMemo(() => {
+    return currentMonthTransactions
+      .filter(t => ['expense', 'despesa', 'saida'].includes(t.type) && t.status === 'pago')
+      .reduce((sum, e) => sum + Number(e.valor), 0);
+  }, [currentMonthTransactions]);
+
+  const profit = revenue - expenses;
+  const profitMargin = revenue > 0 ? (profit / revenue) * 100 : 0;
+  const goalDifference = revenue - monthlyGoal;
+
+  // Overdue transactions
+  const overdueTransactions = useMemo(() => {
+    return contextTransactions.filter(t =>
+      ['expense', 'despesa', 'saida'].includes(t.type) && t.status === 'vencido'
+    );
+  }, [contextTransactions]);
+
+  const overdueTotal = overdueTransactions.reduce((sum, e) => sum + Number(e.valor), 0);
 
 
-  // 2. Personal Financials (Current Month)
-  const personalTransactions = transactions.filter(t => t.origem === 'pessoal');
-  const currentPersonalTransactions = personalTransactions.filter(t => {
-    const d = new Date(t.date);
-    return d.getMonth() === selectedMonth && d.getFullYear() === selectedYear;
-  });
+  // Personal-specific calculations (only when in pessoal context)
+  const fixedExpenses = useMemo(() => {
+    if (context !== 'pessoal' && context !== 'consolidado') return 0;
+    return currentMonthTransactions
+      .filter(t => ['expense', 'despesa', 'saida', 'card_payment'].includes(t.type) && t.recorrente && t.status === 'pago')
+      .reduce((sum, e) => sum + Number(e.valor), 0);
+  }, [currentMonthTransactions, context]);
 
-  const personalRev = currentPersonalTransactions
-    .filter(t => ['revenue', 'receita', 'income'].includes(t.type) && t.status === 'pago')
-    .reduce((sum, r) => sum + Number(r.valor), 0);
-
-  const fixedExp = currentPersonalTransactions
-    .filter(t => ['expense', 'despesa', 'saida', 'card_payment'].includes(t.type) && t.recorrente)
-    .reduce((sum, e) => sum + Number(e.valor), 0);
-
-  const variableExp = currentPersonalTransactions
-    .filter(t => ['expense', 'despesa', 'saida', 'card_payment'].includes(t.type) && !t.recorrente)
-    .reduce((sum, e) => sum + Number(e.valor), 0);
-
-  const totalPersonalExp = fixedExp + variableExp;
-  const personalBal = personalRev - totalPersonalExp;
-  const committedPct = personalRev > 0 ? (totalPersonalExp / personalRev) * 100 : 0;
+  const variableExpenses = useMemo(() => {
+    if (context !== 'pessoal' && context !== 'consolidado') return 0;
+    return currentMonthTransactions
+      .filter(t => ['expense', 'despesa', 'saida', 'card_payment'].includes(t.type) && !t.recorrente && t.status === 'pago')
+      .reduce((sum, e) => sum + Number(e.valor), 0);
+  }, [currentMonthTransactions, context]);
 
 
   // 3. Chart Data Preparation
@@ -92,7 +109,7 @@ export default function DashboardPage() {
       const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
       const monthName = d.toLocaleString('default', { month: 'short' });
 
-      const monthTx = companyTransactions.filter(t => {
+      const monthTx = contextTransactions.filter(t => {
         const tDate = new Date(t.date);
         return tDate.getMonth() === d.getMonth() && tDate.getFullYear() === d.getFullYear();
       });
@@ -103,7 +120,7 @@ export default function DashboardPage() {
       last6Months.push({ month: monthName, receita: rev, despesa: exp });
     }
     return last6Months;
-  }, [companyTransactions]);
+  }, [contextTransactions]);
 
 
   // 4. Channel Data (Dynamic)
@@ -168,32 +185,33 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <KPICard
             title="Renda Total"
-            value={formatCurrency(personalRev)}
-            trend={5.2} // Placeholder trend
-            trendLabel="vs mês anterior"
+            value={formatCurrency(revenue)}
+            trend={0}
+            trendLabel="Mês Atual"
             icon={<DollarSign className="w-5 h-5" />}
             variant="highlight"
           />
           <KPICard
             title="Despesas Fixas"
-            value={formatCurrency(fixedExp)}
+            value={formatCurrency(fixedExpenses)}
             subtitle="Recorrentes"
             icon={<TrendingDown className="w-5 h-5" />}
           />
           <KPICard
             title="Despesas Variáveis"
-            value={formatCurrency(variableExp)}
+            value={formatCurrency(variableExpenses)}
             subtitle="Não recorrentes"
             icon={<TrendingDown className="w-5 h-5" />}
           />
           <KPICard
             title="Sobra Mensal"
-            value={formatCurrency(personalBal)}
-            subtitle={`${(100 - committedPct).toFixed(1)}% disponível`}
+            value={formatCurrency(revenue - fixedExpenses - variableExpenses)}
+            subtitle={revenue > 0 ? `${((1 - (fixedExpenses + variableExpenses) / revenue) * 100).toFixed(1)}% disponível` : '0% disponível'}
             icon={<TrendingUp className="w-5 h-5" />}
-            variant={personalBal >= 0 ? 'success' : 'danger'}
+            variant={(revenue - fixedExpenses - variableExpenses) >= 0 ? 'success' : 'danger'}
           />
         </div>
+
 
         {/* Charts and Security */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -221,7 +239,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <KPICard
           title="Receita Realizada"
-          value={formatCurrency(companyRev)}
+          value={formatCurrency(revenue)}
           trend={0} // To be calculated vs last month real data if desired
           trendLabel="Mês Atual"
           icon={<DollarSign className="w-5 h-5" />}
@@ -229,15 +247,15 @@ export default function DashboardPage() {
         />
         <KPICard
           title="Despesas Realizadas"
-          value={formatCurrency(companyExp)}
+          value={formatCurrency(expenses)}
           trend={0}
           trendLabel="Mês Atual"
           icon={<TrendingDown className="w-5 h-5" />}
         />
         <KPICard
           title="Lucro Líquido"
-          value={formatCurrency(companyProfit)}
-          subtitle={companyProfit >= 0 ? "Positivo" : "Negativo"}
+          value={formatCurrency(profit)}
+          subtitle={profit >= 0 ? "Positivo" : "Negativo"}
           icon={<TrendingUp className="w-5 h-5" />}
           variant="success"
         />
@@ -256,10 +274,10 @@ export default function DashboardPage() {
         />
         <KPICard
           title="Contas Vencidas"
-          value={overdueCompany.length.toString()}
+          value={overdueTransactions.length.toString()}
           subtitle={formatCurrency(overdueTotal)}
           icon={<AlertTriangle className="w-5 h-5" />}
-          variant={overdueCompany.length > 0 ? 'danger' : 'default'}
+          variant={overdueTransactions.length > 0 ? 'danger' : 'default'}
         />
       </div>
 

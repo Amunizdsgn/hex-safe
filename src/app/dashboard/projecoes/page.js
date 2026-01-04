@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useFinancialContext } from '@/contexts/FinancialContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ArrowUpCircle, ArrowDownCircle, Wallet, AlertCircle, CheckCircle2, Clock, Target, Edit2 } from 'lucide-react';
@@ -9,26 +9,81 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
 export default function ProjectionsPage() {
-    const { transactions, selectedMonth, selectedYear } = useFinancialContext();
+    const { transactions, selectedMonth, selectedYear, context } = useFinancialContext();
 
-    // --- Goal State ---
+    // --- Goal State - Separate for empresa and pessoal ---
+    const getStorageKey = () => {
+        if (context === 'empresa') return 'monthlyGoalEmpresa';
+        if (context === 'pessoal') return 'monthlyGoalPessoal';
+        return 'monthlyGoalConsolidado';
+    };
+
+    const getDefaultGoal = () => {
+        if (context === 'empresa') return 80000; // Default empresa goal
+        if (context === 'pessoal') return 20000; // Default pessoal goal
+        // Consolidado = soma das metas de empresa e pessoal
+        const empresaGoal = Number(localStorage.getItem('monthlyGoalEmpresa')) || 80000;
+        const pessoalGoal = Number(localStorage.getItem('monthlyGoalPessoal')) || 20000;
+        return empresaGoal + pessoalGoal;
+    };
+
     const [monthlyGoal, setMonthlyGoal] = useState(() => {
         if (typeof window !== 'undefined') {
-            return Number(localStorage.getItem('monthlyGoal')) || 20000;
+            const storageKey = getStorageKey();
+            // For consolidado, always calculate from empresa + pessoal
+            if (context === 'consolidado') {
+                return getDefaultGoal();
+            }
+            return Number(localStorage.getItem(storageKey)) || getDefaultGoal();
         }
-        return 20000;
+        return getDefaultGoal();
     });
     const [isEditingGoal, setIsEditingGoal] = useState(false);
 
+    // Update goal when context changes
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const storageKey = getStorageKey();
+            // For consolidado, recalculate from empresa + pessoal
+            if (context === 'consolidado') {
+                const empresaGoal = Number(localStorage.getItem('monthlyGoalEmpresa')) || 80000;
+                const pessoalGoal = Number(localStorage.getItem('monthlyGoalPessoal')) || 20000;
+                setMonthlyGoal(empresaGoal + pessoalGoal);
+            } else {
+                const savedGoal = Number(localStorage.getItem(storageKey));
+                setMonthlyGoal(savedGoal || getDefaultGoal());
+            }
+        }
+    }, [context]);
+
     const handleSaveGoal = () => {
-        localStorage.setItem('monthlyGoal', monthlyGoal);
+        // Don't allow editing consolidado goal (it's calculated)
+        if (context === 'consolidado') {
+            setIsEditingGoal(false);
+            return;
+        }
+        const storageKey = getStorageKey();
+        localStorage.setItem(storageKey, monthlyGoal);
         setIsEditingGoal(false);
     };
 
     // --- Calculations ---
 
     const metrics = useMemo(() => {
-        const currentMonthTransactions = transactions.filter(t => {
+        // Filter by context first - with fallback for legacy transactions
+        const contextTransactions = context === 'consolidado'
+            ? transactions
+            : transactions.filter(t => {
+                // Fallback: if no origem field, assume 'empresa' (legacy)
+                const transactionOrigem = t.origem || 'empresa';
+
+                // Treat 'conta' as 'empresa' (legacy)
+                if (transactionOrigem === 'conta') return context === 'empresa';
+
+                return transactionOrigem === context;
+            });
+
+        const currentMonthTransactions = contextTransactions.filter(t => {
             const tDate = new Date(t.date);
             return tDate.getMonth() === selectedMonth && tDate.getFullYear() === selectedYear;
         });
@@ -64,7 +119,7 @@ export default function ProjectionsPage() {
             expense: { paid: expensePaid, pending: expensePending, total: expenseTotal, byCategory: expenseByCategory },
             balance: incomeTotal - expenseTotal
         };
-    }, [transactions, selectedMonth, selectedYear]);
+    }, [transactions, selectedMonth, selectedYear, context]);
 
     // Format Currency Helper
     const formatBRL = (value) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
@@ -83,7 +138,9 @@ export default function ProjectionsPage() {
 
                 {/* Goal Input Section */}
                 <div className="flex flex-col items-end gap-1">
-                    <label className="text-xs text-muted-foreground font-medium">Meta Mensal</label>
+                    <label className="text-xs text-muted-foreground font-medium">
+                        Meta Mensal {context === 'consolidado' && '(Calculada)'}
+                    </label>
                     {isEditingGoal ? (
                         <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-4 duration-300">
                             <Input
@@ -97,14 +154,20 @@ export default function ProjectionsPage() {
                         </div>
                     ) : (
                         <div
-                            className="flex items-center gap-2 px-3 py-1.5 bg-secondary/10 hover:bg-secondary/20 rounded-lg cursor-pointer border border-transparent hover:border-border transition-all group"
-                            onClick={() => setIsEditingGoal(true)}
+                            className={`flex items-center gap-2 px-3 py-1.5 bg-secondary/10 rounded-lg border border-transparent transition-all group ${context !== 'consolidado'
+                                ? 'hover:bg-secondary/20 cursor-pointer hover:border-border'
+                                : 'cursor-default opacity-75'
+                                }`}
+                            onClick={() => context !== 'consolidado' && setIsEditingGoal(true)}
+                            title={context === 'consolidado' ? 'Meta calculada automaticamente (Empresa + Pessoal)' : 'Clique para editar'}
                         >
-                            <Target className="w-4 h-4 text-primary group-hover:scale-110 transition-transform" />
+                            <Target className={`w-4 h-4 text-primary ${context !== 'consolidado' ? 'group-hover:scale-110' : ''} transition-transform`} />
                             <span className="text-xl font-bold text-foreground">
                                 {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(monthlyGoal)}
                             </span>
-                            <Edit2 className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                            {context !== 'consolidado' && (
+                                <Edit2 className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                            )}
                         </div>
                     )}
                 </div>

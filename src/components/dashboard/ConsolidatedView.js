@@ -3,26 +3,65 @@ import { useFinancialContext } from '@/contexts/FinancialContext';
 import { formatCurrency } from '@/lib/utils';
 
 export function ConsolidatedView() {
-    const { transactions, accounts, investments } = useFinancialContext();
+    const { transactions, accounts, investments, selectedMonth, selectedYear } = useFinancialContext();
+
+    // Helper to check if transaction is in selected period
+    const isInPeriod = (dateStr) => {
+        if (!dateStr) return false;
+
+        const months = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+
+        // Robust string parsing assuming ISO-like or YYYY-MM-DD
+        if (typeof dateStr === 'string') {
+            // Take first part if T exists (YYYY-MM-DDT...)
+            const cleanDate = dateStr.split('T')[0];
+            const parts = cleanDate.split('-');
+            if (parts.length >= 3) {
+                const y = parseInt(parts[0]);
+                const m = parseInt(parts[1]);
+                const monthName = months[m - 1];
+                return monthName === selectedMonth && y === selectedYear;
+            }
+        }
+
+        // Fallback for Date objects or other formats
+        const d = new Date(dateStr);
+        if (!isNaN(d.getTime())) {
+            return months[d.getMonth()] === selectedMonth && d.getFullYear() === selectedYear;
+        }
+        return false;
+    };
+
+    // Filter by period first
+    const periodTransactions = transactions.filter(t => isInPeriod(t.date));
 
     // Company metrics
-    const companyTransactions = transactions.filter(t => t.origem === 'empresa' || t.origem === 'conta');
+    const companyTransactions = periodTransactions.filter(t => {
+        const origem = t.origem || 'empresa'; // Fallback for legacy
+        return origem === 'empresa' || origem === 'conta';
+    });
+
     const companyRevenueTotal = companyTransactions
-        .filter(t => ['revenue', 'receita', 'entrada'].includes(t.type))
+        .filter(t => ['revenue', 'receita', 'entrada', 'income'].includes(t.type)) // added 'income' just in case
         .reduce((sum, r) => sum + Number(r.valor), 0);
+
     const companyExpenseTotal = companyTransactions
         .filter(t => ['expense', 'despesa', 'saida'].includes(t.type))
         .reduce((sum, e) => sum + Number(e.valor), 0);
+
     const companyProfit = companyRevenueTotal - companyExpenseTotal;
 
     // Personal metrics
-    const personalTransactions = transactions.filter(t => t.origem === 'pessoal');
+    const personalTransactions = periodTransactions.filter(t => t.origem === 'pessoal');
+
     const personalRevenueTotal = personalTransactions
-        .filter(t => ['revenue', 'receita', 'entrada'].includes(t.type))
+        .filter(t => ['revenue', 'receita', 'entrada', 'income'].includes(t.type))
         .reduce((sum, r) => sum + Number(r.valor), 0);
+
     const personalExpenseTotal = personalTransactions
         .filter(t => ['expense', 'despesa', 'saida', 'card_payment'].includes(t.type))
         .reduce((sum, e) => sum + Number(e.valor), 0);
+
     const personalBalance = personalRevenueTotal - personalExpenseTotal;
 
     // Transfers (Identify transfers from company to personal)

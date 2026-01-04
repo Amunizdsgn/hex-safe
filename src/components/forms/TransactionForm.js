@@ -8,8 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetFooter } from '@/components/ui/sheet';
 import { Loader2, CreditCard, Wallet, Landmark, QrCode, FileText, ArrowUpCircle, ArrowDownCircle, Plus, Briefcase, ArrowRightLeft } from 'lucide-react';
 import { useFinancialContext } from '@/contexts/FinancialContext';
-// import { financialAccounts } from '@/data/mockData'; // Removing static import
 import { CategoryManager } from './CategoryManager';
+import { toDateString } from '@/lib/dateUtils';
 
 export function TransactionForm({ onSuccess, initialTransaction }) {
     const { context, clients, creditCards, updateCreditCard, addLocalTransaction, updateLocalTransaction, expenseCategories, incomeCategories, accounts: financialAccounts } = useFinancialContext();
@@ -23,7 +23,7 @@ export function TransactionForm({ onSuccess, initialTransaction }) {
         amount: initialTransaction?.valor?.toString() || '',
         type: initialTransaction?.type || 'expense',
         category: initialTransaction?.categoria || initialTransaction?.category || '',
-        date: initialTransaction?.date || initialTransaction?.data?.toISOString?.().split('T')[0] || new Date().toISOString().split('T')[0],
+        date: initialTransaction?.date || initialTransaction?.data?.toISOString?.().split('T')[0] || toDateString(),
         status: initialTransaction?.status || 'pago',
         clientId: initialTransaction?.clientId || '',
         clientName: initialTransaction?.cliente || initialTransaction?.clientName || '',
@@ -32,7 +32,8 @@ export function TransactionForm({ onSuccess, initialTransaction }) {
         installments: initialTransaction?.parcelas?.toString() || '1',
         selectedCardId: '', // For paying a bill
         destinationAccountId: '', // For transfers
-        isRecurrent: false
+        isRecurrent: false,
+        origem: initialTransaction?.origem || (context === 'consolidado' ? 'empresa' : context) // Add origem field
     });
 
     const paymentMethods = [
@@ -86,7 +87,7 @@ export function TransactionForm({ onSuccess, initialTransaction }) {
                     date: formData.date,
                     data: new Date(formData.date),
                     status: 'pago',
-                    origem: context === 'consolidado' ? 'empresa' : context,
+                    origem: formData.origem,
                     banco: financialAccounts.find(a => a.id === formData.bankAccountId)?.nome || 'Conta',
                     accountId: formData.bankAccountId, // Link to account for balance deduction
                     metodo: 'transfer',
@@ -106,27 +107,60 @@ export function TransactionForm({ onSuccess, initialTransaction }) {
 
             } else if (formData.type === 'pro_labore') {
                 // SPECIAL HANDLER: Pro-Labore
-                const transactionData = {
-                    descricao: formData.description || 'Retirada de Pro-Labore',
-                    description: formData.description || 'Retirada de Pro-Labore',
-                    valor: parseFloat(formData.amount),
+                // Creates TWO transactions:
+                // 1. Expense in EMPRESA (PJ pays)
+                // 2. Income in PESSOAL (PF receives)
+
+                const amount = parseFloat(formData.amount);
+                const date = formData.date;
+
+                // 1. EMPRESA - Despesa (PJ paga)
+                const empresaExpense = {
+                    descricao: formData.description || 'Pagamento de Pro-Labore',
+                    description: formData.description || 'Pagamento de Pro-Labore',
+                    valor: amount,
                     type: 'expense',
                     categoria: 'Pro-Labore',
                     category: 'Pro-Labore',
-                    date: formData.date,
-                    data: new Date(formData.date),
+                    date: date,
+                    data: new Date(date),
                     status: 'pago',
-                    origem: context === 'consolidado' ? 'empresa' : context,
-                    banco: financialAccounts.find(a => a.id === formData.bankAccountId)?.nome || 'Conta',
+                    origem: 'empresa', // Always empresa
+                    banco: financialAccounts.find(a => a.id === formData.bankAccountId && a.origem === 'empresa')?.nome || 'Conta Empresa',
                     accountId: formData.bankAccountId,
                     metodo: 'transfer',
                     metodoPagamento: 'transfer',
                     parcelas: 1,
                     cliente: 'Sócios',
-                    servico: 'Administrativo'
+                    servico: 'Administrativo',
+                    recorrente: true // Pro-labore é sempre recorrente
                 };
 
-                addLocalTransaction({ id: Date.now(), ...transactionData });
+                // 2. PESSOAL - Receita (PF recebe)
+                const pessoalIncome = {
+                    descricao: formData.description || 'Recebimento de Pro-Labore',
+                    description: formData.description || 'Recebimento de Pro-Labore',
+                    valor: amount,
+                    type: 'income',
+                    categoria: 'Pro-Labore',
+                    category: 'Pro-Labore',
+                    date: date,
+                    data: new Date(date),
+                    status: 'pago',
+                    origem: 'pessoal', // Always pessoal
+                    banco: 'Conta Pessoal',
+                    accountId: null, // Can be linked to personal account if exists
+                    metodo: 'transfer',
+                    metodoPagamento: 'transfer',
+                    parcelas: 1,
+                    cliente: 'Empresa',
+                    servico: 'Pro-Labore',
+                    recorrente: true
+                };
+
+                // Add both transactions
+                addLocalTransaction({ id: Date.now(), ...empresaExpense });
+                addLocalTransaction({ id: Date.now() + 1, ...pessoalIncome });
 
             } else if (formData.type === 'transfer') {
                 // SPECIAL HANDLER: Internal Transfer
@@ -153,7 +187,7 @@ export function TransactionForm({ onSuccess, initialTransaction }) {
                     date: dateData,
                     data: new Date(dateData),
                     status: 'pago',
-                    origem: context === 'consolidado' ? 'empresa' : context,
+                    origem: formData.origem,
                     banco: originAccount?.nome || 'Conta',
                     accountId: formData.bankAccountId,
                     metodo: 'transfer',
@@ -176,7 +210,7 @@ export function TransactionForm({ onSuccess, initialTransaction }) {
                     date: dateData,
                     data: new Date(dateData),
                     status: 'pago',
-                    origem: context === 'consolidado' ? 'empresa' : context,
+                    origem: formData.origem,
                     banco: destAccount?.nome || 'Conta',
                     accountId: formData.destinationAccountId,
                     metodo: 'transfer',
@@ -225,7 +259,7 @@ export function TransactionForm({ onSuccess, initialTransaction }) {
                             date: installmentDate.toISOString().split('T')[0],
                             data: installmentDate,
                             status: 'pendente', // Credit card purchases are "pending" on the bill until paid? Or "pago" on the card but bill is pending? Usually "confirmed" in a sense. Let's keep 'pendente' as 'to be paid via bill'.
-                            origem: context === 'consolidado' ? 'empresa' : context,
+                            origem: formData.origem,
                             banco: selectedCard?.nome || 'Cartão de Crédito',
                             accountId: null, // No bank account affected yet
                             creditCardId: selectedCard?.id, // Link to card
@@ -284,14 +318,15 @@ export function TransactionForm({ onSuccess, initialTransaction }) {
                         data: new Date(formData.date),
                         dataVencimento: new Date(formData.date),
                         status: formData.status,
-                        origem: context === 'consolidado' ? 'empresa' : context,
+                        origem: formData.origem,
                         banco: financialAccounts.find(a => a.id === formData.bankAccountId)?.nome || 'Caixa',
                         accountId: formData.bankAccountId, // CRITICAL: Required for balance update
                         metodo: formData.paymentMethod,
                         metodoPagamento: formData.paymentMethod,
                         parcelas: formData.paymentMethod === 'credit' ? parseInt(formData.installments) : 1,
                         cliente: formData.clientName || 'Cliente',
-                        servico: formData.category
+                        servico: formData.category,
+                        recorrente: formData.isRecurrent || false // Add recorrente field
                     };
 
                     if (isEditing) {
@@ -312,7 +347,7 @@ export function TransactionForm({ onSuccess, initialTransaction }) {
                     amount: '',
                     type: 'expense',
                     category: '',
-                    date: new Date().toISOString().split('T')[0],
+                    date: toDateString(),
                     status: 'pago',
                     clientId: '',
                     clientName: '',
@@ -392,6 +427,37 @@ export function TransactionForm({ onSuccess, initialTransaction }) {
                     <span className="text-xs">Transferir</span>
                 </button>
             </div>
+
+            {/* Origem Selector - Only visible in Consolidated view */}
+            {context === 'consolidado' && formData.type !== 'pro_labore' && formData.type !== 'transfer' && (
+                <div className="space-y-2">
+                    <Label>Origem do Lançamento</Label>
+                    <div className="grid grid-cols-2 gap-3">
+                        <button
+                            type="button"
+                            onClick={() => setFormData(prev => ({ ...prev, origem: 'empresa' }))}
+                            className={`p-3 text-center rounded-lg border transition-all flex items-center justify-center gap-2 ${formData.origem === 'empresa'
+                                ? 'border-primary bg-primary/10 text-primary font-bold'
+                                : 'border-border hover:border-primary/50 text-muted-foreground'
+                                }`}
+                        >
+                            <Briefcase className="w-4 h-4" />
+                            <span>Empresa</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setFormData(prev => ({ ...prev, origem: 'pessoal' }))}
+                            className={`p-3 text-center rounded-lg border transition-all flex items-center justify-center gap-2 ${formData.origem === 'pessoal'
+                                ? 'border-blue-500 bg-blue-500/10 text-blue-500 font-bold'
+                                : 'border-border hover:border-blue-500/50 text-muted-foreground'
+                                }`}
+                        >
+                            <Wallet className="w-4 h-4" />
+                            <span>Pessoal</span>
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {formData.type === 'transfer' ? (
                 // --- TRANSFER FORM ---
@@ -675,6 +741,22 @@ export function TransactionForm({ onSuccess, initialTransaction }) {
                             </SelectContent>
                         </Select>
                     </div>
+
+                    {/* Checkbox Recorrente - Only for expenses and personal */}
+                    {formData.type === 'expense' && formData.origem === 'pessoal' && (
+                        <div className="flex items-center space-x-2 p-3 bg-secondary/30 rounded-lg border border-border/50">
+                            <input
+                                type="checkbox"
+                                id="isRecurrent"
+                                checked={formData.isRecurrent}
+                                onChange={(e) => setFormData(prev => ({ ...prev, isRecurrent: e.target.checked }))}
+                                className="w-4 h-4 rounded border-border text-primary focus:ring-primary"
+                            />
+                            <Label htmlFor="isRecurrent" className="cursor-pointer">
+                                Despesa Recorrente (Fixa)
+                            </Label>
+                        </div>
+                    )}
 
                     <div className="space-y-2">
                         <Label htmlFor="paymentMethod">Método de Pagamento</Label>

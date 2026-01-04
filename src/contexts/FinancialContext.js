@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { getCurrentMonth, getCurrentYear } from '@/lib/dateUtils';
 
 const FinancialContext = createContext(undefined);
 
@@ -12,9 +13,9 @@ export function FinancialProvider({ children }) {
     // Auth State
     const [user, setUser] = useState(null);
 
-    // Global Date Filter State (for month/year selector)
-    const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
-    const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+    // Global Date Filter State (for month/year selector) - Using Salvador timezone
+    const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth());
+    const [selectedYear, setSelectedYear] = useState(getCurrentYear());
 
     // Global state 
     const [transactions, setTransactions] = useState([]);
@@ -29,6 +30,9 @@ export function FinancialProvider({ children }) {
 
     // Credit Cards State
     const [creditCards, setCreditCards] = useState([]);
+
+    // Recurring Expenses State
+    const [recurringExpenses, setRecurringExpenses] = useState([]);
 
     // Categories State (for transactions) - Split by type
     const [expenseCategories, setExpenseCategories] = useState([
@@ -56,10 +60,99 @@ export function FinancialProvider({ children }) {
         { id: 'facebook', name: 'Facebook Ads', color: '#1877F2', active: true },
         { id: 'google', name: 'Google Ads', color: '#4285F4', active: true },
         { id: 'linkedin', name: 'LinkedIn', color: '#0A66C2', active: true },
-        { id: 'referral', name: 'Indicação', color: '#10B981', active: true },
         { id: 'organic', name: 'Site/Orgânico', color: '#8B5CF6', active: true },
         { id: 'other', name: 'Outros', color: '#6B7280', active: true }
     ]);
+
+    // Notifications State
+    const [notifications, setNotifications] = useState([]);
+
+    // Calculate Notifications based on Transactions
+    useEffect(() => {
+        // Run only on client side to avoid hydration mismatch with dates
+        if (typeof window === 'undefined') return;
+
+        const generateNotifications = () => {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            const alerts = [];
+
+            // 1. Overdue Expenses (Vencidas)
+            const overdue = transactions.filter(t =>
+                (t.type === 'expense' || t.type === 'saida' || t.type === 'despesa') &&
+                t.status === 'pendente' &&
+                new Date(t.date || t.data) < today
+            );
+
+            overdue.forEach(t => {
+                // Calculate days overdue
+                const tDate = new Date(t.date || t.data);
+                const diffTime = Math.abs(today - tDate);
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                alerts.push({
+                    id: `overdue-${t.id}`,
+                    title: 'Conta Vencida',
+                    message: `${t.descricao || t.description} - R$ ${Number(t.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+                    time: `Há ${diffDays} dia${diffDays > 1 ? 's' : ''}`,
+                    type: 'destructive', // red
+                    priority: 1
+                });
+            });
+
+            // 2. Due Today (Vence Hoje)
+            const dueToday = transactions.filter(t => {
+                if (!['expense', 'saida', 'despesa'].includes(t.type) || t.status !== 'pendente') return false;
+                const tDate = new Date(t.date || t.data);
+                // Adjust for timezone potentially, but simple string comp is safer for YYYY-MM-DD
+                const tString = tDate.toISOString().split('T')[0];
+                const todayString = today.toISOString().split('T')[0];
+                return tString === todayString;
+            });
+
+            dueToday.forEach(t => {
+                alerts.push({
+                    id: `due-${t.id}`,
+                    title: 'Vence Hoje',
+                    message: `${t.descricao || t.description} - R$ ${Number(t.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+                    time: 'Hoje',
+                    type: 'warning', // yellow
+                    priority: 2
+                });
+            });
+
+            // 3. Recent Incoming (Receita Confirmada - last 2 days)
+            const recentIncome = transactions.filter(t =>
+                ['income', 'receita', 'entrada'].includes(t.type) &&
+                t.status === 'pago'
+            );
+
+            recentIncome.forEach(t => {
+                const tDate = new Date(t.date || t.data);
+                const diffTime = Math.abs(today - tDate);
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                if (diffDays <= 2) {
+                    alerts.push({
+                        id: `income-${t.id}`,
+                        title: 'Receita Confirmada',
+                        message: `${t.descricao || t.description} - R$ ${Number(t.valor).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+                        time: diffDays === 0 ? 'Hoje' : `Há ${diffDays} dia${diffDays > 1 ? 's' : ''}`,
+                        type: 'success', // green
+                        priority: 3
+                    });
+                }
+            });
+
+            // Sort by priority (1 = highest)
+            alerts.sort((a, b) => a.priority - b.priority);
+
+            setNotifications(alerts);
+        };
+
+        generateNotifications();
+    }, [transactions]);
 
     // Initial Fetch
     useEffect(() => {
@@ -156,7 +249,8 @@ export function FinancialProvider({ children }) {
                     const mappedTransactions = transactionsData.map(t => ({
                         ...t,
                         valor: Number(t.amount), // Map amount to valor
-                        origem: t.account_id ? 'conta' : 'empresa', // Heuristic or need join
+                        valor: Number(t.amount), // Map amount to valor
+                        origem: t.origem || (t.account_id ? 'conta' : 'empresa'), // Respect DB origin, fallback for legacy
                         // Ensure date is string YYYY-MM-DD if needed, but Date obj is fine for parsing
                     }));
                     setTransactions(mappedTransactions);
@@ -165,6 +259,13 @@ export function FinancialProvider({ children }) {
                 // Fetch Accounts
                 const { data: accountsData } = await supabase.from('accounts').select('*');
                 if (accountsData) setAccounts(accountsData);
+
+                // Fetch Recurring Expenses
+                const { data: recurringData } = await supabase
+                    .from('recurring_expenses')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+                if (recurringData) setRecurringExpenses(recurringData);
             }
             setLoading(false);
         };
@@ -577,6 +678,125 @@ export function FinancialProvider({ children }) {
         return true;
     };
 
+    // ===== RECURRING EXPENSES FUNCTIONS =====
+    const addRecurringExpense = async (expenseData) => {
+        try {
+            const { data, error } = await supabase
+                .from('recurring_expenses')
+                .insert([{
+                    user_id: user.id,
+                    origem: expenseData.origem,
+                    descricao: expenseData.descricao,
+                    categoria: expenseData.categoria,
+                    valor_estimado: expenseData.valor_estimado,
+                    dia_vencimento: expenseData.dia_vencimento,
+                    metodo_pagamento: expenseData.metodo_pagamento,
+                    conta_id: expenseData.conta_id,
+                    ativo: true
+                }])
+                .select()
+                .single();
+
+            if (error) throw error;
+
+            setRecurringExpenses(prev => [data, ...prev]);
+            return data;
+        } catch (error) {
+            console.error('Error adding recurring expense:', error);
+            throw error;
+        }
+    };
+
+    const updateRecurringExpense = async (id, updates) => {
+        try {
+            const { data, error } = await supabase
+                .from('recurring_expenses')
+                .update(updates)
+                .eq('id', id)
+                .select()
+                .single();
+
+            if (error) throw error;
+
+            setRecurringExpenses(prev => prev.map(re => re.id === id ? data : re));
+            return data;
+        } catch (error) {
+            console.error('Error updating recurring expense:', error);
+            throw error;
+        }
+    };
+
+    const deleteRecurringExpense = async (id) => {
+        try {
+            const { error } = await supabase
+                .from('recurring_expenses')
+                .delete()
+                .eq('id', id);
+
+            if (error) throw error;
+
+            setRecurringExpenses(prev => prev.filter(re => re.id !== id));
+            return true;
+        } catch (error) {
+            console.error('Error deleting recurring expense:', error);
+            throw error;
+        }
+    };
+
+    const toggleRecurringExpense = async (id, ativo) => {
+        return updateRecurringExpense(id, { ativo });
+    };
+
+    const generatePendingRecurringExpenses = async (month, year) => {
+        try {
+            const activeRecurring = recurringExpenses.filter(re => re.ativo);
+            let generatedCount = 0;
+
+            for (const recurring of activeRecurring) {
+                // Check if already generated for this month
+                const monthStr = String(month).padStart(2, '0');
+                const dateStr = `${year}-${monthStr}-${String(recurring.dia_vencimento).padStart(2, '0')}`;
+
+                const { data: existing } = await supabase
+                    .from('transactions')
+                    .select('id')
+                    .eq('recurring_expense_id', recurring.id)
+                    .eq('date', dateStr)
+                    .single();
+
+                if (!existing) {
+                    // Generate new transaction
+                    const transaction = {
+                        descricao: recurring.descricao,
+                        description: recurring.descricao,
+                        valor: recurring.valor_estimado,
+                        type: 'expense',
+                        categoria: recurring.categoria,
+                        category: recurring.categoria,
+                        date: dateStr,
+                        data: new Date(dateStr),
+                        status: 'pendente',
+                        origem: recurring.origem,
+                        metodo: recurring.metodo_pagamento,
+                        metodoPagamento: recurring.metodo_pagamento,
+                        accountId: recurring.conta_id,
+                        recorrente: true,
+                        recurring_expense_id: recurring.id,
+                        is_auto_generated: true
+                    };
+
+                    await addLocalTransaction(transaction);
+                    generatedCount++;
+                }
+            }
+
+            return generatedCount;
+        } catch (error) {
+            console.error('Error generating recurring expenses:', error);
+            throw error;
+        }
+    };
+
     return (
         <FinancialContext.Provider value={{
             user,
@@ -632,7 +852,15 @@ export function FinancialProvider({ children }) {
             channels,
             addChannel,
             updateChannel,
-            removeChannel
+            removeChannel,
+            // Recurring Expenses
+            recurringExpenses,
+            addRecurringExpense,
+            updateRecurringExpense,
+            deleteRecurringExpense,
+            toggleRecurringExpense,
+            generatePendingRecurringExpenses,
+            notifications // Export notifications
         }}>
             {children}
         </FinancialContext.Provider>

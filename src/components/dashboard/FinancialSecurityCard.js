@@ -14,7 +14,7 @@ export function FinancialSecurityCard() {
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
     const personalExpenses = transactions.filter(t =>
-        (t.origem === 'pessoal' || t.origem === 'conta') &&
+        t.origem === 'pessoal' &&
         ['expense', 'despesa', 'saida', 'card_payment'].includes(t.type) &&
         new Date(t.date) >= thirtyDaysAgo
     );
@@ -22,7 +22,11 @@ export function FinancialSecurityCard() {
     const totalMonthlyCost = personalExpenses.reduce((sum, e) => sum + Number(e.valor), 0);
 
     // Calculate total reserves (personal accounts + investments with immediate liquidity)
-    const personalAccounts = accounts.filter(a => a.type === 'checking' || a.type === 'savings' || !a.type); // Broad filter
+    // Legacy logic: accounts without origen defaults to 'empresa', so we strict check 'pessoal'
+    const personalAccounts = accounts.filter(a =>
+        a.origem === 'pessoal' &&
+        (a.type === 'banco' || a.type === 'checking' || a.type === 'savings' || !a.type)
+    );
     const accountsTotal = personalAccounts.reduce((sum, a) => sum + Number(a.saldoAtual), 0);
 
     const liquidInvestments = investments.filter(

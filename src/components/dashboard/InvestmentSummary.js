@@ -20,7 +20,11 @@ export function InvestmentSummary() {
 
     const filteredInvestments = context === 'consolidado'
         ? investments
-        : investments.filter(i => i.origem === context);
+        : investments.filter(i => {
+            const origem = i.origem || 'empresa';
+            if (origem === 'conta') return context === 'empresa';
+            return origem === context;
+        });
 
     const totalInvested = filteredInvestments.reduce((sum, i) => sum + i.valorAplicado, 0);
     const totalCurrent = filteredInvestments.reduce((sum, i) => sum + i.valorAtual, 0);

@@ -45,7 +45,11 @@ export default function WalletsPage() {
     const filteredAccounts = accounts;
     const filteredCreditCards = context === 'consolidado'
         ? creditCards
-        : creditCards.filter(cc => cc.origem === context);
+        : creditCards.filter(cc => {
+            const origem = cc.origem || 'empresa';
+            if (origem === 'conta') return context === 'empresa';
+            return origem === context;
+        });
 
     const totalBalance = filteredAccounts.reduce((sum, a) => sum + a.saldoAtual, 0);
     const totalCreditLimit = filteredCreditCards.reduce((sum, cc) => sum + cc.limite, 0);

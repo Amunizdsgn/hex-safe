@@ -10,12 +10,13 @@ import { SheetFooter } from '@/components/ui/sheet';
 import { Loader2, DollarSign } from 'lucide-react';
 import { useFinancialContext } from '@/contexts/FinancialContext';
 import { formatCurrency } from '@/data/mockData';
+import { toDateString } from '@/lib/dateUtils';
 
 export function ServiceSaleForm({ service, onSuccess }) {
     const { context, clients, addLocalTransaction, accounts } = useFinancialContext();
     const [loading, setLoading] = useState(false);
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = toDateString();
 
     const [formData, setFormData] = useState({
         valor: service?.price || '',
@@ -81,7 +82,11 @@ export function ServiceSaleForm({ service, onSuccess }) {
         }
     };
 
-    const bankAccounts = accounts.filter(acc => acc.tipo === 'banco');
+    // Filter for company bank accounts only
+    const bankAccounts = accounts.filter(acc =>
+        acc.tipo === 'banco' &&
+        (acc.origem === 'empresa' || acc.origem === 'conta' || !acc.origem)
+    );
 
     return (
         <form onSubmit={handleSubmit} className="space-y-4 py-4">
