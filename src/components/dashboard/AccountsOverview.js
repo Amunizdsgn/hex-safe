@@ -1,20 +1,36 @@
 "use client"
 
 import { AlertTriangle, CheckCircle2, Clock } from 'lucide-react';
-import { companyExpenses, personalExpenses, formatCurrency, getStatusColor } from '@/data/mockData';
 import { useFinancialContext } from '@/contexts/FinancialContext';
-import { cn } from '@/lib/utils';
+import { cn, formatCurrency } from '@/lib/utils';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
-export function AccountsOverview() {
-    const { context } = useFinancialContext();
+const getStatusColor = (status) => {
+    switch (status) {
+        case 'pago': return 'bg-success/10 text-success border-success/20';
+        case 'pendente': return 'bg-warning/10 text-warning border-warning/20';
+        case 'vencido': return 'bg-destructive/10 text-destructive border-destructive/20';
+        default: return 'bg-secondary text-muted-foreground border-transparent';
+    }
+};
 
-    const expenses = context === 'empresa'
-        ? companyExpenses
-        : context === 'pessoal'
-            ? personalExpenses
-            : [...companyExpenses, ...personalExpenses];
+export function AccountsOverview() {
+    const { context, transactions } = useFinancialContext();
+
+    const expensesRaw = transactions.filter(t => {
+        const isExpense = ['expense', 'despesa', 'saida', 'card_payment'].includes(t.type);
+        if (!isExpense) return false;
+
+        if (context === 'consolidado') return true;
+        return t.origem === context || (context === 'empresa' && t.origem === 'conta');
+    });
+
+    const expenses = expensesRaw.map(e => ({
+        ...e,
+        dataVencimento: new Date(e.date || e.data || new Date()),
+        descricao: e.description || e.category || e.categoria || e.servico || 'Conta'
+    }));
 
     const overdueExpenses = expenses.filter(e => e.status === 'vencido');
     const pendingExpenses = expenses.filter(e => e.status === 'pendente');
@@ -24,7 +40,7 @@ export function AccountsOverview() {
     const pendingTotal = pendingExpenses.reduce((sum, e) => sum + e.valor, 0);
 
     const recentExpenses = [...expenses]
-        .sort((a, b) => b.dataVencimento.getTime() - a.dataVencimento.getTime())
+        .sort((a, b) => (b.dataVencimento?.getTime() || 0) - (a.dataVencimento?.getTime() || 0))
         .slice(0, 5);
 
     return (

@@ -1,11 +1,20 @@
 "use client"
 
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
-import { channelPerformance, formatCurrency } from '@/data/mockData';
+import { formatCurrency } from '@/lib/utils';
 
 const colors = ['#01B8BE', '#00D9E0', '#A8FCFF', '#00777B'];
 
-export function ChannelChart() {
+
+export function ChannelChart({ data }) {
+    // Fallback if no data
+    if (!data || data.length === 0) return (
+        <div className="glass-card rounded-xl p-6 animate-slide-up flex flex-col items-center justify-center h-full min-h-[300px]">
+            <h3 className="text-lg font-semibold text-foreground mb-2">Receita por Canal</h3>
+            <p className="text-muted-foreground text-sm">Sem dados de receita vinculados a canais.</p>
+        </div>
+    );
+
     return (
         <div className="glass-card rounded-xl p-6 animate-slide-up">
             <h3 className="text-lg font-semibold text-foreground mb-6">Receita por Canal</h3>
@@ -13,17 +22,17 @@ export function ChannelChart() {
                 <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                         <Pie
-                            data={channelPerformance}
+                            data={data}
                             cx="50%"
                             cy="50%"
                             innerRadius={60}
                             outerRadius={100}
                             paddingAngle={2}
-                            dataKey="receita"
-                            nameKey="canal"
+                            dataKey="value" // Changed from 'receita' to generic 'value' for reusability if needed, or stick to passed format
+                            nameKey="name"  // Changed from 'canal' to 'name'
                         >
-                            {channelPerformance.map((_, index) => (
-                                <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
+                            {data.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.color || colors[index % colors.length]} />
                             ))}
                         </Pie>
                         <Tooltip

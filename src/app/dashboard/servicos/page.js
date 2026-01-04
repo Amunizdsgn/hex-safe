@@ -1,124 +1,243 @@
 "use client"
 
-import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
-import { servicePerformance, formatCurrency, formatPercent } from '@/data/mockData';
-import { cn } from '@/lib/utils';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend } from 'recharts';
-
-const monthlyServiceData = [
-    { month: 'Set', 'Desenvolvimento Web': 38000, 'Sistema Personalizado': 45000, 'App Mobile': 12000, 'Consultoria': 8000 },
-    { month: 'Out', 'Desenvolvimento Web': 42000, 'Sistema Personalizado': 55000, 'App Mobile': 15000, 'Consultoria': 12000 },
-    { month: 'Nov', 'Desenvolvimento Web': 35000, 'Sistema Personalizado': 48000, 'App Mobile': 18000, 'Consultoria': 15000 },
-    { month: 'Dez', 'Desenvolvimento Web': 42000, 'Sistema Personalizado': 57000, 'App Mobile': 18000, 'Consultoria': 17000 },
-];
+import { useState } from 'react';
+import { Button } from "@/components/ui/button";
+import { Plus, Edit2, Trash2, Package, CheckCircle2, TrendingUp, DollarSign, ShoppingCart } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetDescription } from "@/components/ui/sheet";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { formatCurrency, services as mockServices } from '@/data/mockData';
+import { ServiceSaleForm } from '@/components/forms/ServiceSaleForm';
+import { useFinancialContext } from '@/contexts/FinancialContext';
 
 export default function ServicesPage() {
-    const totalRevenue = servicePerformance.reduce((sum, s) => sum + s.receita, 0);
-    const totalProjects = servicePerformance.reduce((sum, s) => sum + s.projetos, 0);
-    const avgMargin = servicePerformance.reduce((sum, s) => sum + s.margem, 0) / servicePerformance.length;
+    const { transactions, selectedMonth, selectedYear } = useFinancialContext();
+
+    // Using local state for Mock CRUD to enable immediate feedback
+    const [services, setServices] = useState(mockServices);
+    const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+    // Editing
+    const [editingId, setEditingId] = useState(null);
+    const [formData, setFormData] = useState({
+        name: '',
+        description: '',
+        default_checklist: ''
+    });
+
+    const getServiceMetrics = (serviceName, serviceId) => {
+        // Filter transactions that are income and match this service
+        const relatedTransactions = transactions.filter(t => {
+            const isRevenue = ['income', 'revenue', 'Receita'].includes(t.type);
+            const matchesService = (t.serviceName === serviceName || t.serviceId === serviceId || t.category === serviceName || t.categoria === serviceName);
+
+            if (!isRevenue || !matchesService) return false;
+
+            // Date Filter
+            if (selectedMonth === null || selectedYear === null) return true;
+
+            const tDate = t.data ? new Date(t.data) : (t.date ? new Date(t.date) : new Date());
+            return tDate.getMonth() === selectedMonth && tDate.getFullYear() === selectedYear;
+        });
+
+        const totalRevenue = relatedTransactions.reduce((sum, t) => sum + (t.valor || 0), 0);
+        const count = relatedTransactions.length;
+
+        return { totalRevenue, count };
+    };
+
+    const handleOpenCreate = () => {
+        setEditingId(null);
+        setFormData({ name: '', description: '', default_checklist: '' });
+        setIsDialogOpen(true);
+    };
+
+    const handleOpenEdit = (service) => {
+        setEditingId(service.id);
+        setFormData({
+            name: service.name,
+            description: service.description || '',
+            default_checklist: Array.isArray(service.default_checklist) ? service.default_checklist.map(i => i.label || i).join('\n') : ''
+        });
+        setIsDialogOpen(true);
+    };
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+
+        // Parse checklist
+        const checklistArray = formData.default_checklist.split('\n').filter(line => line.trim() !== '').map(line => ({ id: Math.random().toString(), label: line.trim(), checked: false }));
+
+        const payload = {
+            id: editingId || Math.random().toString(),
+            name: formData.name,
+            description: formData.description,
+            default_checklist: checklistArray,
+            // Deprecated fields (kept for type safety/mock compatibility if needed)
+            type: 'Categoria',
+            base_price: 0
+        };
+
+        if (editingId) {
+            setServices(services.map(s => s.id === editingId ? payload : s));
+        } else {
+            setServices([...services, payload]);
+        }
+        setIsDialogOpen(false);
+    };
+
+    const handleRemove = (id) => {
+        setServices(services.filter(s => s.id !== id));
+    };
 
     return (
         <div className="space-y-6">
-            <div>
-                <h2 className="text-2xl font-bold text-foreground">Performance por Serviço</h2>
-                <p className="text-muted-foreground">Análise detalhada de cada linha de serviço</p>
+            <div className="flex items-center justify-between">
+                <div>
+                    <h2 className="text-2xl font-bold text-foreground bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">Categorias de Receita (Serviços)</h2>
+                    <p className="text-muted-foreground">Gerencie suas categorias e acompanhe o desempenho.</p>
+                </div>
+                <Button onClick={handleOpenCreate} className="bg-primary hover:bg-primary/90">
+                    <Plus className="w-4 h-4 mr-2" /> Nova Categoria
+                </Button>
             </div>
 
-            {/* Summary */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="glass-card rounded-xl p-5">
-                    <p className="text-sm text-muted-foreground mb-1">Receita Total</p>
-                    <p className="text-2xl font-bold kpi-value">{formatCurrency(totalRevenue)}</p>
-                </div>
-                <div className="glass-card rounded-xl p-5">
-                    <p className="text-sm text-muted-foreground mb-1">Total de Projetos</p>
-                    <p className="text-2xl font-bold kpi-value">{totalProjects}</p>
-                </div>
-                <div className="glass-card rounded-xl p-5">
-                    <p className="text-sm text-muted-foreground mb-1">Margem Média</p>
-                    <p className="text-2xl font-bold text-success">{formatPercent(avgMargin)}</p>
-                </div>
-            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {services.map((service) => {
+                    const metrics = getServiceMetrics(service.name, service.id);
+                    return (
+                        <div key={service.id} className="glass-card rounded-xl p-6 hover:border-primary/50 transition-colors group relative overflow-hidden flex flex-col h-full">
+                            <div className="absolute top-0 right-0 p-4 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
+                                <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-secondary" onClick={() => handleOpenEdit(service)}>
+                                    <Edit2 className="w-4 h-4 text-muted-foreground" />
+                                </Button>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive" onClick={() => handleRemove(service.id)}>
+                                    <Trash2 className="w-4 h-4" />
+                                </Button>
+                            </div>
 
-            {/* Evolution Chart */}
-            <div className="glass-card rounded-xl p-6">
-                <h3 className="text-lg font-semibold text-foreground mb-6">Evolução Mensal por Serviço</h3>
-                <div className="h-80">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={monthlyServiceData}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#2A3333" vertical={false} />
-                            <XAxis dataKey="month" stroke="#9CB0B1" fontSize={12} tickLine={false} axisLine={false} />
-                            <YAxis stroke="#9CB0B1" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `${(v / 1000)}k`} />
-                            <Tooltip
-                                contentStyle={{ backgroundColor: '#0B1111', border: '1px solid #2A3333', borderRadius: '8px', color: '#E9F7F8' }}
-                                formatter={(value) => [formatCurrency(value), '']}
-                            />
-                            <Legend formatter={(value) => <span style={{ color: '#9CB0B1', fontSize: '12px' }}>{value}</span>} />
-                            <Line type="monotone" dataKey="Desenvolvimento Web" stroke="#01B8BE" strokeWidth={2} dot={{ fill: '#01B8BE' }} />
-                            <Line type="monotone" dataKey="Sistema Personalizado" stroke="#00D9E0" strokeWidth={2} dot={{ fill: '#00D9E0' }} />
-                            <Line type="monotone" dataKey="App Mobile" stroke="#A8FCFF" strokeWidth={2} dot={{ fill: '#A8FCFF' }} />
-                            <Line type="monotone" dataKey="Consultoria" stroke="#00777B" strokeWidth={2} dot={{ fill: '#00777B' }} />
-                        </LineChart>
-                    </ResponsiveContainer>
-                </div>
-            </div>
+                            <div className="flex items-center gap-3 mb-4">
+                                <div className="p-3 rounded-lg bg-primary/10 text-primary">
+                                    <Package className="w-6 h-6" />
+                                </div>
+                                <h3 className="text-lg font-bold">{service.name}</h3>
+                            </div>
 
-            {/* Services Table */}
-            <div className="glass-card rounded-xl overflow-hidden">
-                <div className="overflow-x-auto">
-                    <table className="w-full">
-                        <thead>
-                            <tr className="border-b border-border bg-secondary/30">
-                                <th className="text-left px-6 py-4 text-sm font-medium text-muted-foreground">Serviço</th>
-                                <th className="text-right px-6 py-4 text-sm font-medium text-muted-foreground">Receita</th>
-                                <th className="text-center px-6 py-4 text-sm font-medium text-muted-foreground">Projetos</th>
-                                <th className="text-right px-6 py-4 text-sm font-medium text-muted-foreground">Ticket Médio</th>
-                                <th className="text-right px-6 py-4 text-sm font-medium text-muted-foreground">Custos</th>
-                                <th className="text-right px-6 py-4 text-sm font-medium text-muted-foreground">Lucro</th>
-                                <th className="text-right px-6 py-4 text-sm font-medium text-muted-foreground">Margem</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {servicePerformance.map((service, index) => (
-                                <tr key={service.servico} className="border-b border-border/50 hover:bg-secondary/30 transition-colors">
-                                    <td className="px-6 py-4">
-                                        <div className="flex items-center gap-3">
-                                            <div
-                                                className="w-3 h-3 rounded-full"
-                                                style={{ backgroundColor: ['#01B8BE', '#00D9E0', '#A8FCFF', '#00777B', '#007A7D', '#00A5A8'][index] }}
-                                            />
-                                            <span className="text-sm font-medium text-foreground">{service.servico}</span>
+                            <div className="grid grid-cols-2 gap-4 mb-4">
+                                <div className="bg-secondary/30 p-3 rounded-lg">
+                                    <p className="text-xs text-muted-foreground flex items-center gap-1 mb-1">
+                                        <DollarSign className="w-3 h-3" /> Faturamento
+                                    </p>
+                                    <p className="text-sm font-bold text-success">{formatCurrency(metrics.totalRevenue)}</p>
+                                </div>
+                                <div className="bg-secondary/30 p-3 rounded-lg">
+                                    <p className="text-xs text-muted-foreground flex items-center gap-1 mb-1">
+                                        <TrendingUp className="w-3 h-3" /> Vendas
+                                    </p>
+                                    <p className="text-sm font-bold text-foreground">{metrics.count}</p>
+                                </div>
+                            </div>
+
+                            <div className="flex-1 space-y-3">
+                                <p className="text-sm text-muted-foreground line-clamp-2 min-h-[40px]">
+                                    {service.description || 'Sem descrição definida.'}
+                                </p>
+
+                                {service.default_checklist && service.default_checklist.length > 0 && (
+                                    <div className="pt-3 border-t border-border/50 mt-auto">
+                                        <p className="text-xs font-semibold uppercase text-muted-foreground mb-2">Entregas Padrão</p>
+                                        <div className="space-y-1">
+                                            {service.default_checklist.slice(0, 3).map((item, idx) => (
+                                                <div key={idx} className="flex items-center gap-2 text-xs text-muted-foreground">
+                                                    <CheckCircle2 className="w-3 h-3 text-success/70" />
+                                                    <span>{item.label || item}</span>
+                                                </div>
+                                            ))}
+                                            {service.default_checklist.length > 3 && (
+                                                <p className="text-xs text-muted-foreground italic">+ {service.default_checklist.length - 3} itens...</p>
+                                            )}
                                         </div>
-                                    </td>
-                                    <td className="px-6 py-4 text-right text-sm font-semibold text-foreground">
-                                        {formatCurrency(service.receita)}
-                                    </td>
-                                    <td className="px-6 py-4 text-center text-sm text-muted-foreground">
-                                        {service.projetos}
-                                    </td>
-                                    <td className="px-6 py-4 text-right text-sm text-muted-foreground">
-                                        {formatCurrency(service.ticketMedio)}
-                                    </td>
-                                    <td className="px-6 py-4 text-right text-sm text-muted-foreground">
-                                        {formatCurrency(service.custos)}
-                                    </td>
-                                    <td className="px-6 py-4 text-right text-sm font-semibold text-success">
-                                        {formatCurrency(service.lucro)}
-                                    </td>
-                                    <td className="px-6 py-4 text-right">
-                                        <span className={cn(
-                                            'text-sm font-medium',
-                                            service.margem >= 70 ? 'text-success' : service.margem >= 50 ? 'text-warning' : 'text-destructive'
-                                        )}>
-                                            {formatPercent(service.margem)}
-                                        </span>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Register Sale Button */}
+                            <div className="mt-auto pt-4 border-t border-border/50">
+                                <Sheet>
+                                    <SheetTrigger asChild>
+                                        <Button className="w-full bg-success hover:bg-success/90" size="sm">
+                                            <ShoppingCart className="w-4 h-4 mr-2" />
+                                            Registrar Venda
+                                        </Button>
+                                    </SheetTrigger>
+                                    <SheetContent className="w-full sm:max-w-md overflow-y-auto">
+                                        <SheetHeader className="mb-4">
+                                            <SheetTitle>Registrar Venda de Serviço</SheetTitle>
+                                            <SheetDescription>
+                                                Crie uma transação de receita vinculada a este serviço
+                                            </SheetDescription>
+                                        </SheetHeader>
+                                        <ServiceSaleForm
+                                            service={service}
+                                            onSuccess={() => {
+                                                // Refresh metrics or show success message
+                                                console.log('Venda registrada com sucesso!');
+                                            }}
+                                        />
+                                    </SheetContent>
+                                </Sheet>
+                            </div>
+                        </div>
+                    );
+                })}
             </div>
+
+            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>{editingId ? 'Editar Categoria' : 'Nova Categoria'}</DialogTitle>
+                        <DialogDescription>Configure os detalhes da categoria de serviço.</DialogDescription>
+                    </DialogHeader>
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                        <div className="space-y-2">
+                            <Label>Nome da Categoria</Label>
+                            <Input
+                                value={formData.name}
+                                onChange={e => setFormData({ ...formData, name: e.target.value })}
+                                placeholder="Ex: Gestão de Tráfego"
+                                required
+                            />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Descrição</Label>
+                            <Textarea
+                                value={formData.description}
+                                onChange={e => setFormData({ ...formData, description: e.target.value })}
+                                placeholder="O que este serviço/categoria engloba?"
+                            />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Checklist Padrão (1 item por linha)</Label>
+                            <Textarea
+                                value={formData.default_checklist}
+                                onChange={e => setFormData({ ...formData, default_checklist: e.target.value })}
+                                placeholder="Planejamento&#10;Execução&#10;Relatório"
+                                className="h-24 font-mono text-xs"
+                            />
+                            <p className="text-[10px] text-muted-foreground">Itens obrigatórios para vendas desta categoria.</p>
+                        </div>
+
+                        <DialogFooter>
+                            <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>Cancelar</Button>
+                            <Button type="submit">Salvar</Button>
+                        </DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

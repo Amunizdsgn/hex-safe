@@ -1,7 +1,7 @@
 "use client"
 
 import { TrendingUp, Wallet, PiggyBank } from 'lucide-react';
-import { investments, formatCurrency, formatPercent } from '@/data/mockData';
+import { formatCurrency, formatPercent } from '@/data/mockData';
 import { useFinancialContext } from '@/contexts/FinancialContext';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 
@@ -16,7 +16,7 @@ const typeLabels = {
 const colors = ['#01B8BE', '#00D9E0', '#A8FCFF', '#00777B', '#007A7D'];
 
 export function InvestmentSummary() {
-    const { context } = useFinancialContext();
+    const { context, investments } = useFinancialContext();
 
     const filteredInvestments = context === 'consolidado'
         ? investments

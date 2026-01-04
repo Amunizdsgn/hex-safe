@@ -148,3 +148,52 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
+
+-- [[ UNIFICATION MIGRATION ]] --
+
+-- CHANNELS (Canais de Aquisição)
+create table public.channels (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  name text not null,
+  type text default 'Pago', -- 'Pago', 'Orgânico', 'Parceria', 'Indicação'
+  monthly_cost numeric default 0,
+  active boolean default true,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- SERVICES (Catálogo de Serviços)
+create table public.services (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  name text not null,
+  type text default 'Recorrente', -- 'Recorrente', 'Pontual'
+  base_price numeric default 0,
+  description text,
+  default_checklist jsonb default '[]'::jsonb,
+  deliverables jsonb default '[]'::jsonb,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- RLS for New Tables
+alter table public.channels enable row level security;
+alter table public.services enable row level security;
+
+create policy "Users can view own channels" on public.channels for select using (auth.uid() = user_id);
+create policy "Users can insert own channels" on public.channels for insert with check (auth.uid() = user_id);
+create policy "Users can update own channels" on public.channels for update using (auth.uid() = user_id);
+create policy "Users can delete own channels" on public.channels for delete using (auth.uid() = user_id);
+
+create policy "Users can view own services" on public.services for select using (auth.uid() = user_id);
+create policy "Users can insert own services" on public.services for insert with check (auth.uid() = user_id);
+create policy "Users can update own services" on public.services for update using (auth.uid() = user_id);
+create policy "Users can delete own services" on public.services for delete using (auth.uid() = user_id);
+
+-- Add Columns to Existing Tables via ALTER
+alter table public.clients add column if not exists channel_id uuid references public.channels(id) on delete set null;
+alter table public.clients add column if not exists service_id uuid references public.services(id) on delete set null;
+
+alter table public.deals add column if not exists channel_id uuid references public.channels(id) on delete set null;
+alter table public.deals add column if not exists service_id uuid references public.services(id) on delete set null;

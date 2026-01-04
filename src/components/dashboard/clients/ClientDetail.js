@@ -10,8 +10,10 @@ import {
     SheetTitle,
     SheetDescription,
 } from "@/components/ui/sheet";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatCurrency } from '@/data/mockData';
-import { Mail, Phone, MapPin, Calendar, Briefcase, TrendingUp, AlertTriangle, CheckCircle, Activity, HeartPulse, Clock, Edit2, Save, X, Plus } from 'lucide-react';
+import { Mail, Phone, MapPin, Calendar, Briefcase, TrendingUp, AlertTriangle, CheckCircle, CheckCircle2, Activity, HeartPulse, Clock, Edit2, Save, X, Plus } from 'lucide-react';
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -21,11 +23,43 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"; // Import Dialog components
+import { DollarSign, Trash2 } from 'lucide-react'; // Import Icon
 import { ClientProjectBoard } from "./ClientProjectBoard";
 
 export function ClientDetail({ client, isOpen, onClose }) {
-    const { updateGlobalClient, addGlobalClient } = useFinancialContext();
+    const { updateGlobalClient, addGlobalClient, addLocalTransaction, channels } = useFinancialContext();
     const [isEditing, setIsEditing] = useState(false);
+
+    // Payment Dialog State
+    const [isPaymentOpen, setIsPaymentOpen] = useState(false);
+    const [paymentValue, setPaymentValue] = useState('');
+    const [paymentDescription, setPaymentDescription] = useState('Mensalidade'); // Default to Mensalidade
+
+    const handleQuickPayment = () => {
+        if (!paymentValue || isNaN(Number(paymentValue))) return;
+
+        const description = paymentDescription || 'Pagamento';
+
+        addLocalTransaction({
+            data: new Date(),
+            valor: parseFloat(paymentValue),
+            type: 'revenue', // Explicitly mark as revenue
+            origem: 'empresa',
+            categoria: 'Serviço',
+            status: 'pago',
+            cliente: client.name,
+            clientId: client.id,
+            // User Request: "reason - client name"
+            servico: `${description} - ${client.name}`,
+            descricao: 'Serviço'
+        });
+
+        setIsPaymentOpen(false);
+        setPaymentValue('');
+        setPaymentDescription('Mensalidade');
+        // Optional: Show toast or feedback
+    };
 
     // Form States
     const [formData, setFormData] = useState({});
@@ -35,10 +69,15 @@ export function ClientDetail({ client, isOpen, onClose }) {
         if (client) {
             setFormData({
                 ...client,
+                internalData: client.internalData || {
+                    contract: { value: '', startDate: new Date().toLocaleDateString('pt-BR') },
+                    recurrentSettings: { billingDay: '5' }
+                },
                 tags: client.tags || [],
                 projects: client.projects || [],
                 notes: client.notes || '', // Ensure notes is initialized
                 segment: client.segment || '', // Ensure segment is initialized
+                acquisitionChannel: client.acquisitionChannel || '', // Initialize acquisition channel
             });
             // If it's a new empty client (no ID), start in edit mode
             setIsEditing(!client.id);
@@ -143,8 +182,55 @@ export function ClientDetail({ client, isOpen, onClose }) {
                                 <Edit2 className="w-4 h-4 mr-2" /> Editar
                             </Button>
                         )}
+                        {!isEditing && (
+                            <Button size="sm" className="gap-2 bg-success hover:bg-success/90 text-white" onClick={() => {
+                                setPaymentValue(client.internalData?.contract?.value || ''); // Pre-fill with contract value
+                                setPaymentDescription('Mensalidade'); // Default description
+                                setIsPaymentOpen(true);
+                            }}>
+                                <DollarSign className="w-4 h-4" /> Registrar Pagamento
+                            </Button>
+                        )}
                     </div>
                 </div>
+
+                {/* Payment Dialog */}
+                <Dialog open={isPaymentOpen} onOpenChange={setIsPaymentOpen}>
+                    <DialogContent className="sm:max-w-[400px] glass-card border-border/50 text-foreground">
+                        <DialogHeader>
+                            <DialogTitle>Registrar Pagamento</DialogTitle>
+                            <DialogDescription>
+                                Lance um pagamento rápido para <strong>{client?.name}</strong>.
+                            </DialogDescription>
+                        </DialogHeader>
+                        <div className="py-4 space-y-4">
+                            <div className="space-y-2">
+                                <Label>Descrição / Motivo</Label>
+                                <Input
+                                    placeholder="Ex: Mensalidade, Setup, Consultoria..."
+                                    value={paymentDescription}
+                                    onChange={(e) => setPaymentDescription(e.target.value)}
+                                    autoFocus
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Valor Recebido (R$)</Label>
+                                <Input
+                                    type="number"
+                                    placeholder="0,00"
+                                    value={paymentValue}
+                                    onChange={(e) => setPaymentValue(e.target.value)}
+                                />
+                            </div>
+                        </div>
+                        <DialogFooter>
+                            <Button variant="ghost" onClick={() => setIsPaymentOpen(false)}>Cancelar</Button>
+                            <Button onClick={handleQuickPayment} className="bg-success text-white hover:bg-success/90">
+                                Confirmar Recebimento
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
 
                 <Tabs defaultValue="geral" className="flex-1 flex flex-col overflow-hidden">
                     <div className="px-6 border-b border-border/50 bg-background/30">
@@ -160,24 +246,23 @@ export function ClientDetail({ client, isOpen, onClose }) {
 
                     <TabsContent value="geral" className="flex-1 overflow-auto p-0 m-0">
                         {!isEditing && (
-                            <div className="grid grid-cols-4 gap-4 px-6 py-4 bg-secondary/5 border-b border-border/50">
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 px-6 py-4 bg-secondary/5 border-b border-border/50">
                                 <div className="p-3 bg-secondary/20 rounded-lg border border-border/50">
-                                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">LTV Total</p>
-                                    <p className="text-lg font-bold text-success">{formatCurrency(metrics?.totalLTV || 0)}</p>
+                                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Total Arrecadado</p>
+                                    <p className="text-lg font-bold text-success">{formatCurrency(metrics?.totalCollected || 0)}</p>
+                                </div>
+                                <div className="p-3 bg-secondary/20 rounded-lg border border-border/50">
+                                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">LTV Total (Proj.)</p>
+                                    <p className="text-lg font-bold text-muted-foreground/80">{formatCurrency(metrics?.totalLTV || 0)}</p>
                                 </div>
                                 <div className="p-3 bg-secondary/20 rounded-lg border border-border/50">
                                     <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Ticket Médio</p>
                                     <p className="text-lg font-bold">{formatCurrency(metrics?.avgTicket || 0)}</p>
                                 </div>
                                 <div className="p-3 bg-secondary/20 rounded-lg border border-border/50">
-                                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Recorrência</p>
-                                    <p className="text-sm font-semibold mt-1">{classification?.recurrencePotential}</p>
-                                </div>
-                                <div className="p-3 bg-secondary/20 rounded-lg border border-border/50">
-                                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Esforço</p>
-                                    <div className="flex items-center gap-1 mt-1">
-                                        <Activity className={`w-3 h-3 ${classification?.effort === 'Alto' ? 'text-destructive' : 'text-success'}`} />
-                                        <p className="text-sm font-semibold">{classification?.effort}</p>
+                                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Saúde</p>
+                                    <div className={`text-sm font-semibold mt-1 px-2 py-0.5 rounded-full w-fit ${getHealthColor(classification?.healthScore)}`}>
+                                        {classification?.healthScore}
                                     </div>
                                 </div>
                             </div>
@@ -190,6 +275,20 @@ export function ClientDetail({ client, isOpen, onClose }) {
                                         <div className="space-y-4">
                                             <h3 className="text-sm font-semibold uppercase text-muted-foreground">Informações de Contato</h3>
                                             <div className="grid grid-cols-2 gap-4">
+                                                <div className="space-y-2 col-span-2">
+                                                    <Label>Nome do Contato (Pessoa)</Label>
+                                                    <Input
+                                                        value={formData.internalData?.contactName || ''}
+                                                        onChange={(e) => setFormData(prev => ({
+                                                            ...prev,
+                                                            internalData: {
+                                                                ...(prev.internalData || {}),
+                                                                contactName: e.target.value
+                                                            }
+                                                        }))}
+                                                        placeholder="Ex: Ana Souza"
+                                                    />
+                                                </div>
                                                 <div className="space-y-2">
                                                     <Label>Email</Label>
                                                     <Input
@@ -204,6 +303,130 @@ export function ClientDetail({ client, isOpen, onClose }) {
                                                         onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
                                                     />
                                                 </div>
+                                                <div className="space-y-2 col-span-2">
+                                                    <Label>Canal de Aquisição</Label>
+                                                    <Select
+                                                        value={formData.acquisitionChannel}
+                                                        onValueChange={(val) => setFormData(prev => ({ ...prev, acquisitionChannel: val }))}
+                                                    >
+                                                        <SelectTrigger>
+                                                            <SelectValue placeholder="Como o cliente chegou até você?" />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {channels?.filter(c => c.active).map(c => (
+                                                                <SelectItem key={c.id} value={c.id}>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: c.color }} />
+                                                                        {c.name}
+                                                                    </div>
+                                                                </SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <Separator />
+
+                                        <div className="space-y-4">
+                                            <h3 className="text-sm font-semibold uppercase text-muted-foreground">Configuração Financeira</h3>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="space-y-2">
+                                                    <Label>Valor Inicial / Contrato (R$)</Label>
+                                                    <Input
+                                                        type="number"
+                                                        placeholder="0,00"
+                                                        value={formData.internalData?.contract?.value || ''}
+                                                        onChange={(e) => setFormData(prev => ({
+                                                            ...prev,
+                                                            internalData: {
+                                                                ...(prev.internalData || {}),
+                                                                contract: { ...(prev.internalData?.contract || {}), value: e.target.value }
+                                                            }
+                                                        }))}
+                                                    />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <Label>CAC (Custo Aquisição)</Label>
+                                                    <Input
+                                                        placeholder="R$ 0,00"
+                                                        value={formData.internalData?.cac || ''}
+                                                        onChange={(e) => setFormData(prev => ({
+                                                            ...prev,
+                                                            internalData: { ...(prev.internalData || {}), cac: e.target.value }
+                                                        }))}
+                                                    />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <Label>Dia de Vencimento</Label>
+                                                    <Input
+                                                        type="number" min="1" max="31"
+                                                        placeholder="Ex: 5"
+                                                        value={formData.internalData?.recurrentSettings?.billingDay || ''}
+                                                        onChange={(e) => setFormData(prev => ({
+                                                            ...prev,
+                                                            internalData: {
+                                                                ...(prev.internalData || {}),
+                                                                recurrentSettings: { ...(prev.internalData?.recurrentSettings || {}), billingDay: e.target.value }
+                                                            }
+                                                        }))}
+                                                    />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <Label>LTV Manual (Opcional)</Label>
+                                                    <Input
+                                                        placeholder="R$ 0,00"
+                                                        value={formData.internalData?.manualLtv || ''}
+                                                        onChange={(e) => {
+                                                            const val = e.target.value;
+                                                            setFormData(prev => ({
+                                                                ...prev,
+                                                                internalData: {
+                                                                    ...(prev.internalData || {}),
+                                                                    manualLtv: val,
+                                                                    useManualLtv: val !== '' // Revert to auto if cleared
+                                                                }
+                                                            }));
+                                                        }}
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <Separator />
+
+                                        <div className="space-y-4">
+                                            <h3 className="text-sm font-semibold uppercase text-muted-foreground">Escopo & Entrega</h3>
+                                            <div className="grid grid-cols-1 gap-4">
+                                                <div className="space-y-2">
+                                                    <Label>Escopo Padrão</Label>
+                                                    <Input
+                                                        placeholder="O que entregar todo mês..."
+                                                        value={formData.internalData?.recurrentSettings?.scope || ''}
+                                                        onChange={(e) => setFormData(prev => ({
+                                                            ...prev,
+                                                            internalData: {
+                                                                ...(prev.internalData || {}),
+                                                                recurrentSettings: { ...(prev.internalData?.recurrentSettings || {}), scope: e.target.value }
+                                                            }
+                                                        }))}
+                                                    />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <Label>Limites & Exceções</Label>
+                                                    <Input
+                                                        placeholder="O que NÃO está incluso..."
+                                                        value={formData.internalData?.recurrentSettings?.exceptions || ''}
+                                                        onChange={(e) => setFormData(prev => ({
+                                                            ...prev,
+                                                            internalData: {
+                                                                ...(prev.internalData || {}),
+                                                                recurrentSettings: { ...(prev.internalData?.recurrentSettings || {}), exceptions: e.target.value }
+                                                            }
+                                                        }))}
+                                                    />
+                                                </div>
                                             </div>
                                         </div>
 
@@ -214,12 +437,45 @@ export function ClientDetail({ client, isOpen, onClose }) {
                                             <div className="grid grid-cols-2 gap-4">
                                                 <div className="space-y-2">
                                                     <Label>Status</Label>
-                                                    <Input
-                                                        value={formData.status || ''}
-                                                        onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value }))}
-                                                    />
+                                                    <Label>Status</Label>
+                                                    <Select
+                                                        value={formData.status}
+                                                        onValueChange={(val) => setFormData(prev => ({ ...prev, status: val }))}
+                                                    >
+                                                        <SelectTrigger>
+                                                            <SelectValue placeholder="Selecione..." />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            <SelectItem value="Ativo">Ativo</SelectItem>
+                                                            <SelectItem value="Inativo">Inativo</SelectItem>
+                                                            <SelectItem value="Pendente">Pendente</SelectItem>
+                                                            <SelectItem value="Churn">Churn (Cancelado)</SelectItem>
+                                                        </SelectContent>
+                                                    </Select>
                                                 </div>
-                                                {/* Future: Add Select for Classification overrides */}
+                                                <div className="space-y-2">
+                                                    <Label>Modelo de Relacionamento</Label>
+                                                    <div className="flex p-1 bg-secondary rounded-md h-9 items-center">
+                                                        <button
+                                                            className={`flex-1 text-xs font-medium py-1 rounded-sm transition-all h-full ${formData.internalData?.relationshipType === 'Pontual' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                                                            onClick={() => setFormData(prev => ({
+                                                                ...prev,
+                                                                internalData: { ...(prev.internalData || {}), relationshipType: 'Pontual' }
+                                                            }))}
+                                                        >
+                                                            Pontual
+                                                        </button>
+                                                        <button
+                                                            className={`flex-1 text-xs font-medium py-1 rounded-sm transition-all h-full ${!formData.internalData?.relationshipType || formData.internalData?.relationshipType === 'Recorrente' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                                                            onClick={() => setFormData(prev => ({
+                                                                ...prev,
+                                                                internalData: { ...(prev.internalData || {}), relationshipType: 'Recorrente' }
+                                                            }))}
+                                                        >
+                                                            Recorrente
+                                                        </button>
+                                                    </div>
+                                                </div>
                                             </div>
                                             <div className="space-y-2">
                                                 <Label>Notas Internas</Label>
@@ -268,9 +524,9 @@ export function ClientDetail({ client, isOpen, onClose }) {
                                                 <div className="grid gap-2">
                                                     {insights.map((insight, idx) => (
                                                         <div key={idx} className={`p-3 rounded-md border flex items-start gap-3 ${insight.type === 'opportunity' ? 'bg-blue-500/10 border-blue-500/20 text-blue-500' :
-                                                                insight.type === 'warning' ? 'bg-yellow-500/10 border-yellow-500/20 text-yellow-500' :
-                                                                    insight.type === 'recovery' ? 'bg-red-500/10 border-red-500/20 text-red-500' :
-                                                                        'bg-secondary/30 border-border text-muted-foreground'
+                                                            insight.type === 'warning' ? 'bg-yellow-500/10 border-yellow-500/20 text-yellow-500' :
+                                                                insight.type === 'recovery' ? 'bg-red-500/10 border-red-500/20 text-red-500' :
+                                                                    'bg-secondary/30 border-border text-muted-foreground'
                                                             }`}>
                                                             {insight.type === 'warning' ? <AlertTriangle className="w-4 h-4 mt-0.5" /> :
                                                                 insight.type === 'opportunity' ? <TrendingUp className="w-4 h-4 mt-0.5" /> :
@@ -278,6 +534,125 @@ export function ClientDetail({ client, isOpen, onClose }) {
                                                             <p className="text-sm font-medium">{insight.text}</p>
                                                         </div>
                                                     ))}
+
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Contract & Scope Details (Enhancement) */}
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            {/* Financial & Contract Info */}
+                                            <div className="space-y-3">
+                                                <h3 className="text-sm font-semibold flex items-center gap-2 text-foreground">
+                                                    <Briefcase className="w-4 h-4 text-primary" /> Detalhes do Contrato
+                                                </h3>
+                                                <div className="bg-secondary/5 border border-border/50 p-4 rounded-lg space-y-3">
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="text-sm text-muted-foreground">Valor Contrato</span>
+                                                        <span className="text-lg font-bold text-success">
+                                                            {formatCurrency(Number(client.internalData?.contract?.value) || 0)}
+                                                        </span>
+                                                    </div>
+                                                    <Separator className="bg-border/50" />
+                                                    <div className="grid grid-cols-2 gap-4">
+                                                        {client.internalData?.relationshipType !== 'Pontual' && (
+                                                            <div>
+                                                                <p className="text-xs text-muted-foreground">Dia de Vencimento</p>
+                                                                <p className="text-sm font-medium flex items-center gap-1">
+                                                                    <Calendar className="w-3 h-3 text-muted-foreground" />
+                                                                    Dia {client.internalData?.recurrentSettings?.billingDay || client.internalData?.contract?.billingDay || '5'}
+                                                                </p>
+                                                            </div>
+                                                        )}
+                                                        <div className={client.internalData?.relationshipType === 'Pontual' ? 'col-span-2' : ''}>
+                                                            <p className="text-xs text-muted-foreground">Canal de Aquisição</p>
+                                                            <p className="text-sm font-medium text-foreground truncate">
+                                                                {channels.find(c => c.id === client.acquisitionChannel)?.name || client.acquisitionChannel || 'N/D'}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <Separator className="bg-border/50" />
+                                                    <div className="grid grid-cols-2 gap-4">
+                                                        <div>
+                                                            <p className="text-xs text-muted-foreground">CAC (Custo)</p>
+                                                            <p className="text-sm font-medium text-muted-foreground">
+                                                                {formatCurrency(Number(client.internalData?.cac) || 0)}
+                                                            </p>
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-xs text-muted-foreground">LTV Manual</p>
+                                                            <p className="text-sm font-medium text-muted-foreground">
+                                                                {formatCurrency(Number(client.internalData?.manualLtv) || 0)}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Scope & Deliverables */}
+                                            <div className="space-y-3">
+                                                <h3 className="text-sm font-semibold flex items-center gap-2 text-foreground">
+                                                    <Activity className="w-4 h-4 text-primary" /> Escopo & Entrega
+                                                </h3>
+                                                <div className="bg-secondary/5 border border-border/50 p-4 rounded-lg space-y-3 h-full">
+                                                    <div>
+                                                        <p className="text-xs font-bold text-muted-foreground uppercase mb-1">Escopo Padrão</p>
+                                                        <p className="text-sm text-foreground/90 leading-snug">
+                                                            {client.internalData?.recurrentSettings?.scope || <span className="text-muted-foreground italic">Não definido.</span>}
+                                                        </p>
+                                                    </div>
+                                                    {client.internalData?.recurrentSettings?.exceptions && (
+                                                        <>
+                                                            <Separator className="bg-border/50" />
+                                                            <div>
+                                                                <p className="text-xs font-bold text-destructive/80 uppercase mb-1">Limites & Exceções</p>
+                                                                <p className="text-sm text-muted-foreground leading-snug">
+                                                                    {client.internalData.recurrentSettings.exceptions}
+                                                                </p>
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Activation Checklist (Editable) */}
+                                        {(client.internalData?.activationChecklist || []).length > 0 && (
+                                            <div className="bg-secondary/5 border border-border/50 p-4 rounded-lg space-y-3">
+                                                <h3 className="text-sm font-semibold flex items-center gap-2 text-foreground">
+                                                    <CheckCircle2 className="w-4 h-4 text-primary" /> Checklist de Ativação
+                                                </h3>
+                                                <div className="space-y-2">
+                                                    {client.internalData.activationChecklist.map((item) => (
+                                                        <div
+                                                            key={item.id}
+                                                            className="flex items-center space-x-3 p-2 rounded hover:bg-muted/50 transition-colors cursor-pointer"
+                                                            onClick={() => {
+                                                                const newChecklist = client.internalData.activationChecklist.map(i =>
+                                                                    i.id === item.id ? { ...i, checked: !i.checked } : i
+                                                                );
+                                                                updateGlobalClient({
+                                                                    ...client,
+                                                                    internalData: {
+                                                                        ...client.internalData,
+                                                                        activationChecklist: newChecklist
+                                                                    }
+                                                                });
+                                                            }}
+                                                        >
+                                                            <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${item.checked ? 'bg-primary border-primary' : 'border-muted-foreground'}`}>
+                                                                {item.checked && <CheckCircle2 className="w-3 h-3 text-primary-foreground" />}
+                                                            </div>
+                                                            <span className={`text-sm ${item.checked ? 'text-muted-foreground line-through' : 'text-foreground'}`}>
+                                                                {item.label}
+                                                            </span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                                <div className="flex justify-between items-center pt-2">
+                                                    <span className="text-xs text-muted-foreground">
+                                                        {client.internalData.activationChecklist.filter(i => i.checked).length}/{client.internalData.activationChecklist.length} concluídos
+                                                    </span>
                                                 </div>
                                             </div>
                                         )}
@@ -298,16 +673,32 @@ export function ClientDetail({ client, isOpen, onClose }) {
                                             <div className="relative pl-4 border-l border-border/50 space-y-6">
                                                 {(transactions || []).map((tx, idx) => (
                                                     <div key={idx} className="relative">
-                                                        <div className="absolute -left-[21px] top-1 w-3 h-3 rounded-full bg-primary border-2 border-background ring-2 ring-primary/20"></div>
-                                                        <div className="bg-card p-3 rounded-lg border border-border/50 shadow-sm ml-2">
-                                                            <div className="flex justify-between items-start mb-1">
-                                                                <span className="font-semibold text-sm">{tx.servico || tx.descricao || 'Receita'}</span>
-                                                                <span className="text-xs text-muted-foreground whitespace-nowrap">
-                                                                    {new Date(tx.data).toLocaleDateString('pt-BR')}
-                                                                </span>
+                                                        <div className="absolute -left-[21px] top-4 w-3 h-3 rounded-full bg-primary border-2 border-background ring-2 ring-primary/20"></div>
+                                                        <div className="bg-card p-3 rounded-lg border border-border/50 shadow-sm ml-2 hover:border-primary/30 transition-colors group">
+                                                            <div className="flex justify-between items-start mb-2">
+                                                                <span className="font-semibold text-sm truncate mr-2" title={tx.servico || tx.descricao}>{tx.servico || tx.descricao || 'Receita'}</span>
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                                                        {new Date(tx.data).toLocaleDateString('pt-BR')}
+                                                                    </span>
+                                                                    <button
+                                                                        className="text-muted-foreground hover:text-destructive transition-colors opacity-0 group-hover:opacity-100"
+                                                                        onClick={() => removeLocalTransaction(tx.id)}
+                                                                        title="Excluir pagamento"
+                                                                    >
+                                                                        <Trash2 className="w-3 h-3" />
+                                                                    </button>
+                                                                </div>
                                                             </div>
                                                             <div className="flex justify-between items-center">
-                                                                <Badge variant="outline" className="text-[10px] h-5 px-1.5">{tx.status}</Badge>
+                                                                <Badge
+                                                                    variant="secondary"
+                                                                    className={`text-[10px] h-5 px-1.5 ${['Pago', 'Concluído', 'Recebido'].includes(tx.status) ? 'bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20' :
+                                                                        ['Pendente', 'Atrasado'].includes(tx.status) ? 'bg-amber-500/10 text-amber-500 hover:bg-amber-500/20' : ''
+                                                                        }`}
+                                                                >
+                                                                    {tx.status}
+                                                                </Badge>
                                                                 <span className="font-mono font-bold text-success text-sm">{formatCurrency(tx.valor)}</span>
                                                             </div>
                                                         </div>

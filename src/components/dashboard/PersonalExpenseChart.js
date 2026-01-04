@@ -1,15 +1,23 @@
 "use client"
 
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
-import { personalExpenses, formatCurrency } from '@/data/mockData';
+import { formatCurrency } from '@/lib/utils';
+import { useFinancialContext } from '@/contexts/FinancialContext';
 
 const colors = ['#01B8BE', '#00D9E0', '#A8FCFF', '#00777B', '#007A7D', '#00A5A8', '#4DD8DD'];
 
 export function PersonalExpenseChart() {
+    const { transactions } = useFinancialContext();
+
+    const personalExpenses = transactions.filter(t =>
+        (t.origem === 'pessoal') && ['expense', 'despesa', 'saida', 'card_payment'].includes(t.type)
+    );
+
     // Group by category
     const byCategory = personalExpenses.reduce((acc, exp) => {
-        if (!acc[exp.categoria]) acc[exp.categoria] = 0;
-        acc[exp.categoria] += exp.valor;
+        const cat = exp.category || exp.categoria || 'Outros'; // Normalized
+        if (!acc[cat]) acc[cat] = 0;
+        acc[cat] += Number(exp.amount || exp.valor || 0);
         return acc;
     }, {});
 

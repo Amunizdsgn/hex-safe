@@ -1,12 +1,12 @@
 "use client"
 
 import { useState } from 'react';
-import { crmDeals, crmStages } from '@/data/mockData';
+import { crmDeals, crmStages, formatCurrency } from '@/data/mockData';
 import { DealKanban } from '@/components/dashboard/crm/DealKanban';
 import { SalesFunnel } from '@/components/dashboard/crm/SalesFunnel';
 import { Plus } from 'lucide-react';
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -18,7 +18,7 @@ import { useFinancialContext } from '@/contexts/FinancialContext';
 
 export default function CRMPage() {
     // OLD: const [deals, setDeals] = useState(crmDeals);
-    const { addLocalTransaction, deals, addGlobalDeal, updateGlobalDeal, addGlobalClient, removeGlobalDeal, clients } = useFinancialContext();
+    const { addLocalTransaction, deals, addGlobalDeal, updateGlobalDeal, addGlobalClient, updateGlobalClient, removeGlobalDeal, clients, channels, services, selectedMonth, selectedYear } = useFinancialContext();
     const [isNewDealOpen, setIsNewDealOpen] = useState(false);
     const [selectedOrigin, setSelectedOrigin] = useState('');
     const [phone, setPhone] = useState('');
@@ -85,10 +85,12 @@ export default function CRMPage() {
             contactName: formData.get('contactName'),
             contactPhone: phone, // Use state value
             contactEmail: formData.get('contactEmail'),
-            origin: formData.get('origin'),
+            origin: channels.find(c => c.id === formData.get('channelId'))?.name || 'Outros', // Look up name from ID
             instagram: formData.get('instagram'),
             description: formData.get('description'),
-            owner: 'Eu'
+            owner: 'Eu',
+            channelId: formData.get('channelId'),
+            serviceId: formData.get('serviceId')
         };
 
         addGlobalDeal(newDeal);
@@ -135,11 +137,39 @@ export default function CRMPage() {
                     email: deal.contactEmail || '',
                     phone: deal.contactPhone || '',
                     instagram: deal.instagram || '',
-                    status: 'Ativo',
-                    ltv: deal.value, // Initial LTV
+                    status: 'Pendente',
+                    ltv: 0, // Initial LTV set to 0 for manual control
                     lastPurchase: new Date().toISOString(),
                     joinedDate: new Date().toISOString(),
-                    origin: deal.origin || 'CRM'
+                    joinedDate: new Date().toISOString(),
+                    origin: channels.find(c => c.id === deal.channelId)?.name || deal.origin || 'CRM',
+                    acquisitionChannel: deal.channelId, // Fixed: consistent naming with ClientDetail
+                    // service_id: deal.serviceId, // Keeping as is if logic depends elsewhere, but channel was key bug
+                    internalData: {
+                        cac: '0,00',
+                        manualLtv: '0,00',
+                        useManualLtv: true,
+                        recurrentSettings: {
+                            serviceType: services.find(s => s.id === deal.serviceId)?.type || 'Recorrente',
+                            scope: services.find(s => s.id === deal.serviceId)?.description || '',
+                            exceptions: '',
+                            billingDay: '5',
+                            defaultChecklist: services.find(s => s.id === deal.serviceId)?.default_checklist || []
+                        },
+                        contract: {
+                            value: deal.value,
+                            startDate: new Date().toLocaleDateString('pt-BR')
+                        },
+                        cycles: [
+                            {
+                                id: 1,
+                                period: new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }),
+                                status: 'Em Andamento',
+                                checklist: services.find(s => s.id === deal.serviceId)?.default_checklist || [],
+                                internal_deliverables: []
+                            }
+                        ]
+                    }
                 };
 
                 addGlobalClient(newClient);
@@ -151,10 +181,33 @@ export default function CRMPage() {
             } else {
                 const existingClient = clients.find(c => c.id === deal.clientId);
                 finalClientName = existingClient?.name || 'Cliente CRM';
-                // Could update existing client LTV here if needed, but keeping simple for now
+
+                if (existingClient) {
+                    const newProject = {
+                        id: `proj-${Date.now()}`,
+                        title: deal.title,
+                        status: 'Em Andamento',
+                        deadline: deal.closingDate || '',
+                        value: deal.value,
+                        description: deal.description || 'Originado do CRM',
+                        checklist: []
+                    };
+
+                    updateGlobalClient({
+                        ...existingClient,
+                        internalData: {
+                            ...(existingClient.internalData || {}),
+                            projects: [
+                                ...(existingClient.internalData?.projects || []),
+                                newProject
+                            ]
+                        }
+                    });
+                }
             }
 
-            addLocalTransaction({
+            // Automatic transaction removed: Financial operations are manual now
+            /* addLocalTransaction({
                 data: new Date(),
                 valor: deal.value,
                 origem: 'empresa',
@@ -163,7 +216,7 @@ export default function CRMPage() {
                 status: 'pago',
                 cliente: finalClientName,
                 clientId: finalClientId
-            });
+            }); */
         }
 
         updateGlobalDeal({ ...deal, stage: nextStageId });
@@ -182,6 +235,9 @@ export default function CRMPage() {
             ...dealToDuplicate,
             id: `deal-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
             title: `${dealToDuplicate.title} (Cópia)`,
+            stage: crmStages[0].id, // Reset to first stage
+            probability: 0.1, // Reset probability
+            closingDate: '', // Clear closing date
             history: [{
                 id: `h-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
                 type: 'created',
@@ -194,18 +250,58 @@ export default function CRMPage() {
         addGlobalDeal(newDeal);
     };
 
+    // State for deletion
+    const [dealToDelete, setDealToDelete] = useState(null);
+    const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+
     const handleDeleteDeal = (dealId) => {
-        if (confirm('Tem certeza que deseja excluir esta oportunidade?')) {
-            removeGlobalDeal(dealId);
+        setDealToDelete(dealId);
+        setIsDeleteOpen(true);
+    };
+
+    const confirmDelete = () => {
+        if (dealToDelete) {
+            removeGlobalDeal(dealToDelete);
+            setIsDeleteOpen(false);
+            setDealToDelete(null);
         }
     };
 
+    // Filter deals: Active stages always show. Closed/Lost show only for selected month/year.
+    const filteredDeals = deals.filter(deal => {
+        // 1. If filtering is disabled (null), show everything (or verify default behavior)
+        if (selectedMonth === null || selectedYear === null) return true;
+
+        // 2. Active stages: Always show
+        if (deal.stage !== 'Fechado' && deal.stage !== 'Perdido') return true;
+
+        // 3. Completed stages: Check date
+        // Use closingDate if available, otherwise creation date fallback
+        // Fix timezone issues by treating YYYY-MM-DD as local or splitting
+        let dateToCheck = new Date();
+        if (deal.closingDate) {
+            // "2026-01-05"
+            const parts = deal.closingDate.split('-');
+            if (parts.length === 3) {
+                dateToCheck = new Date(parts[0], parts[1] - 1, parts[2]);
+            } else {
+                dateToCheck = new Date(deal.closingDate);
+            }
+        } else if (deal.createdAt) {
+            dateToCheck = new Date(deal.createdAt);
+        } else if (deal.date) {
+            dateToCheck = new Date(deal.date);
+        }
+
+        return dateToCheck.getMonth() === selectedMonth && dateToCheck.getFullYear() === selectedYear;
+    });
+
     return (
-        <div className="p-6 space-y-6">
-            <div className="flex justify-between items-center mb-6">
+        <div className="flex flex-col gap-6 p-6 min-h-[calc(100vh-6rem)]">
+            <div className="flex justify-between items-center shrink-0">
                 <div>
-                    <h1 className="text-3xl font-bold tracking-tight text-foreground">CRM de Vendas</h1>
-                    <p className="text-muted-foreground">Gestão de oportunidades e pipeline</p>
+                    <h1 className="text-2xl font-bold tracking-tight text-foreground">CRM de Vendas</h1>
+                    <p className="text-sm text-muted-foreground">Gestão de oportunidades e pipeline</p>
                 </div>
                 <Button onClick={() => setIsNewDealOpen(true)} className="gap-2 shadow-lg hover:shadow-primary/20 transition-all">
                     <Plus className="w-4 h-4" /> Nova Oportunidade
@@ -248,20 +344,36 @@ export default function CRMPage() {
                                     </Select>
                                 </div>
                                 <div className="space-y-2">
-                                    <Label>Canal de Origem</Label>
-                                    <Select name="origin" onValueChange={setSelectedOrigin}>
+                                    <Label>Serviço Pretendido</Label>
+                                    <Select name="serviceId">
                                         <SelectTrigger>
                                             <SelectValue placeholder="Selecione..." />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            <SelectItem value="Indicação">Indicação</SelectItem>
-                                            <SelectItem value="LinkedIn">LinkedIn</SelectItem>
-                                            <SelectItem value="Google Ads">Google Ads</SelectItem>
-                                            <SelectItem value="Instagram">Instagram</SelectItem>
-                                            <SelectItem value="Outro">Outro</SelectItem>
+                                            {services?.map(s => (
+                                                <SelectItem key={s.id} value={s.id}>{s.name} - {formatCurrency(s.base_price)}</SelectItem>
+                                            ))}
+                                            <SelectItem value="custom">Outro / Personalizado</SelectItem>
                                         </SelectContent>
                                     </Select>
                                 </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label>Canal de Origem</Label>
+                                <Select name="channelId" onValueChange={(val) => {
+                                    const ch = channels.find(c => c.id === val);
+                                    if (ch) setSelectedOrigin(ch.name);
+                                }}>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Selecione..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {channels?.map(c => (
+                                            <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
                             </div>
 
                             {selectedOrigin === 'Instagram' && (
@@ -336,20 +448,19 @@ export default function CRMPage() {
                 </Dialog>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-                <div className="lg:col-span-3">
-                    <DealKanban
-                        deals={deals}
-                        stages={crmStages}
-                        onMoveDeal={handleMoveDeal}
-                        onDealClick={handleDealClick}
-                        onDuplicateDeal={handleDuplicateDeal}
-                        onDeleteDeal={handleDeleteDeal}
-                    />
-                </div>
-                <div className="lg:col-span-1">
-                    <SalesFunnel deals={deals} stages={crmStages} />
-                </div>
+            <div className="flex-1 min-h-0">
+                <DealKanban
+                    deals={filteredDeals}
+                    stages={crmStages}
+                    onMoveDeal={handleMoveDeal}
+                    onDealClick={handleDealClick}
+                    onDuplicateDeal={handleDuplicateDeal}
+                    onDeleteDeal={handleDeleteDeal}
+                />
+            </div>
+
+            <div className="shrink-0 w-full">
+                <SalesFunnel deals={filteredDeals} stages={crmStages} />
             </div>
 
             <DealDetail
@@ -359,6 +470,26 @@ export default function CRMPage() {
                 onAddComment={handleAddComment}
                 onUpdateDeal={handleUpdateDeal}
             />
+
+            {/* Delete Confirmation Dialog */}
+            <Dialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
+                <DialogContent className="sm:max-w-[425px] glass-card border-border/50 text-foreground">
+                    <DialogHeader>
+                        <DialogTitle>Excluir Oportunidade</DialogTitle>
+                        <DialogDescription className="text-muted-foreground">
+                            Tem certeza que deseja excluir esta oportunidade? Esta ação não pode ser desfeita.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter className="gap-2 sm:gap-0">
+                        <Button variant="ghost" onClick={() => setIsDeleteOpen(false)}>
+                            Cancelar
+                        </Button>
+                        <Button onClick={confirmDelete} variant="destructive">
+                            Excluir Oportunidade
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

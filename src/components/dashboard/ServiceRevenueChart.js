@@ -1,18 +1,36 @@
 "use client"
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { servicePerformance, formatCurrency } from '@/data/mockData';
+import { companyRevenues, formatCurrency } from '@/data/mockData';
 
 const colors = ['#01B8BE', '#00D9E0', '#00777B', '#A8FCFF', '#00A5A8', '#007A7D'];
 
 export function ServiceRevenueChart() {
+    // Calculate dynamic performance from revenues
+    const aggregated = companyRevenues.reduce((acc, curr) => {
+        const service = curr.servico || curr.categoria || 'Outros';
+        // Only count positive values (revenues)
+        if (curr.valor > 0) {
+            acc[service] = (acc[service] || 0) + curr.valor;
+        }
+        return acc;
+    }, {});
+
+    const data = Object.entries(aggregated)
+        .map(([servico, receita]) => ({
+            servico,
+            receita
+        }))
+        .sort((a, b) => b.receita - a.receita)
+        .slice(0, 6); // Top 6 services
+
     return (
         <div className="glass-card rounded-xl p-6 animate-slide-up">
-            <h3 className="text-lg font-semibold text-foreground mb-6">Receita por Serviço</h3>
+            <h3 className="text-lg font-semibold text-foreground mb-6">Receita por Categoria/Serviço</h3>
             <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
                     <BarChart
-                        data={servicePerformance}
+                        data={data}
                         layout="vertical"
                         margin={{ top: 5, right: 30, left: 100, bottom: 5 }}
                     >
@@ -44,7 +62,7 @@ export function ServiceRevenueChart() {
                             formatter={(value) => [formatCurrency(value), 'Receita']}
                         />
                         <Bar dataKey="receita" radius={[0, 4, 4, 0]}>
-                            {servicePerformance.map((_, index) => (
+                            {data.map((_, index) => (
                                 <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
                             ))}
                         </Bar>

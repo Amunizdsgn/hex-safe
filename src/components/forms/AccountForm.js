@@ -10,34 +10,45 @@ import { SheetClose, SheetFooter } from '@/components/ui/sheet';
 import { Loader2 } from 'lucide-react';
 import { useFinancialContext } from '@/contexts/FinancialContext';
 
-export function AccountForm({ onSuccess }) {
+export function AccountForm({ onSuccess, initialAccount }) {
     const { context } = useFinancialContext();
-    const { addAccount, loading } = useAccounts(context);
+    const { addAccount, updateAccount, loading } = useAccounts(context);
+
+    const isEditing = !!initialAccount;
+
     const [formData, setFormData] = useState({
-        name: '',
-        type: 'banco', // banco, carteira, investimento
-        balance: '',
-        bank: '',
+        name: initialAccount?.nome || '',
+        type: initialAccount?.tipo || 'banco',
+        balance: initialAccount?.saldoAtual?.toString() || '',
+        bank: initialAccount?.banco || '',
     });
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!formData.name) return;
 
-        await addAccount({
+        const accountData = {
             nome: formData.name,
             tipo: formData.type,
             saldoAtual: parseFloat(formData.balance || '0'),
             banco: formData.bank,
             origem: context === 'consolidado' ? 'empresa' : context
-        });
+        };
 
-        setFormData({
-            name: '',
-            type: 'banco',
-            balance: '',
-            bank: '',
-        });
+        if (isEditing) {
+            await updateAccount(initialAccount.id, accountData);
+        } else {
+            await addAccount(accountData);
+        }
+
+        if (!isEditing) {
+            setFormData({
+                name: '',
+                type: 'banco',
+                balance: '',
+                bank: '',
+            });
+        }
 
         if (onSuccess) onSuccess();
     };
@@ -96,11 +107,13 @@ export function AccountForm({ onSuccess }) {
 
             <SheetFooter className="mt-6">
                 <SheetClose asChild>
-                    <Button variant="ghost" type="button">Cancelar</Button>
+                    <Button type="button" variant="outline">
+                        Cancelar
+                    </Button>
                 </SheetClose>
                 <Button type="submit" disabled={loading} className="gradient-primary">
-                    {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                    Salvar
+                    {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {isEditing ? 'Atualizar' : 'Criar'} Conta
                 </Button>
             </SheetFooter>
         </form>

@@ -3,7 +3,14 @@
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 export function RevenueExpenseChart({ data }) {
-    if (!data || data.length === 0) return null;
+    if (!data || data.length === 0) {
+        return (
+            <div className="glass-card rounded-xl p-6 animate-slide-up h-80 flex flex-col items-center justify-center border-dashed border-border/50">
+                <h3 className="text-lg font-semibold text-foreground mb-2">Receita vs Despesas</h3>
+                <p className="text-muted-foreground text-sm">Sem dados suficientes para o gráfico.</p>
+            </div>
+        );
+    }
 
     return (
         <div className="glass-card rounded-xl p-6 animate-slide-up">

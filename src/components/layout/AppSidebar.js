@@ -28,13 +28,13 @@ import { useFinancialContext } from '@/contexts/FinancialContext';
 
 const navItems = [
     { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, contexts: ['empresa', 'pessoal', 'consolidado'] },
-    { path: '/dashboard/contas', label: 'Contas', icon: Receipt, contexts: ['empresa', 'pessoal', 'consolidado'] },
+    { path: '/dashboard/contas', label: 'Fluxo de Caixa', icon: Receipt, contexts: ['empresa', 'pessoal', 'consolidado'] },
     { path: '/dashboard/servicos', label: 'Serviços', icon: TrendingUp, contexts: ['empresa'] },
     { path: '/dashboard/clientes', label: 'Clientes', icon: Users, contexts: ['empresa'] },
     { path: '/dashboard/crm', label: 'CRM', icon: Kanban, contexts: ['empresa'] },
     { path: '/dashboard/canais', label: 'Canais', icon: Megaphone, contexts: ['empresa'] },
     { path: '/dashboard/projecoes', label: 'Projeções', icon: LineChart, contexts: ['empresa', 'pessoal'] },
-    { path: '/dashboard/investimentos', label: 'Investimentos', icon: PiggyBank, contexts: ['empresa', 'pessoal', 'consolidado'] },
+    { path: '/dashboard/investimentos', label: 'Investimentos', icon: PiggyBank, contexts: ['pessoal', 'consolidado'] },
     { path: '/dashboard/carteiras', label: 'Carteiras', icon: Wallet, contexts: ['empresa', 'pessoal', 'consolidado'] },
 ];
 

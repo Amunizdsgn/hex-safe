@@ -17,9 +17,30 @@ export function analyzeClient(client, allTransactions = []) {
     // Basic Metrics
     const totalSpent = client.ltv || 0; // Assuming LTV in client object is up to date or we calculate from txs
     const projectCount = (client.projects || []).length;
+    // computedTotalSpent: Sum of ALL transactions linked to client (for raw volume)
     const computedTotalSpent = clientTransactions.reduce((acc, tx) => acc + (tx.valor || 0), 0);
-    // Use computed if available and meaningful, else fallback to static LTV
-    const finalLTV = computedTotalSpent > 0 ? computedTotalSpent : totalSpent;
+
+    // totalCollected: Sum of ONLY COMPLETED transactions (Cash in hand / Grana no bolso)
+    const totalCollected = clientTransactions
+        .filter(tx => ['completed', 'pago', 'recebido'].includes(tx.status?.toLowerCase()))
+        .reduce((acc, tx) => acc + (tx.valor || 0), 0);
+
+    // Check for Manual LTV override
+    let finalLTV = computedTotalSpent > 0 ? computedTotalSpent : totalSpent;
+
+    if (client.internalData?.useManualLtv) {
+        // Safe parsing for manual value (handling "1000", "1000.00", "1.000,00")
+        const manualStr = String(client.internalData.manualLtv || '0').replace('R$', '').trim();
+        // If it sends comma, replace with dot. If it has both dots and commas, assume dot is thousands separator IF comma is present later.
+        // Simplest strategy for "Pt-BR": Replace dots with empty, replace comma with dot.
+        // But if user typed "1000.50" (US style)?
+        // Let's try standard JS cast first, if NaN, try BR format.
+        let manualVal = Number(manualStr);
+        if (isNaN(manualVal)) {
+            manualVal = parseFloat(manualStr.replace(/\./g, '').replace(',', '.'));
+        }
+        finalLTV = !isNaN(manualVal) ? manualVal : 0;
+    }
 
     const lastTransaction = clientTransactions[0];
     const firstTransaction = clientTransactions[clientTransactions.length - 1];
@@ -91,7 +112,10 @@ export function analyzeClient(client, allTransactions = []) {
             avgTicket: finalLTV / (projectCount || 1),
             daysSinceLastPurchase,
             clientAgeMonths,
-            projectCount
+            daysSinceLastPurchase,
+            clientAgeMonths,
+            projectCount,
+            totalCollected // New metric: Cash Collected
         },
         classification: {
             relationship,

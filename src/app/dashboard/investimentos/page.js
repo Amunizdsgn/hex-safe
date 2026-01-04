@@ -1,9 +1,9 @@
 "use client"
 
 import { useState } from 'react';
-import { TrendingUp, Lock, Zap, Search, SlidersHorizontal, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { TrendingUp, Lock, Zap, Search, SlidersHorizontal, ArrowUpRight, ArrowDownRight, PlusCircle, Trash2, Edit } from 'lucide-react';
 import { useFinancialContext } from '@/contexts/FinancialContext';
-import { investments, formatCurrency, formatPercent, portfolioHistory, currencyRates, assetOperations } from '@/data/mockData';
+import { formatCurrency, formatPercent, portfolioHistory, currencyRates, assetOperations } from '@/data/mockData';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,6 +14,9 @@ import { RiskAnalysis } from '@/components/dashboard/investments/RiskAnalysis';
 import { CurrencyModule } from '@/components/dashboard/investments/CurrencyModule';
 import { OperationalHistory } from '@/components/dashboard/investments/OperationalHistory';
 import { AdvancedMetrics } from '@/components/dashboard/investments/AdvancedMetrics';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger } from '@/components/ui/sheet';
+import { InvestmentForm } from '@/components/forms/InvestmentForm';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 
 // Reuse existing charts logic where applicable
@@ -34,17 +37,20 @@ const liquidityLabels = {
 const colors = ['#01B8BE', '#00D9E0', '#A8FCFF', '#00777B', '#007A7D'];
 
 export default function InvestmentsPage() {
-    const { context } = useFinancialContext();
+    const { context, investments, addInvestment, updateInvestment, removeInvestment } = useFinancialContext();
     const [viewMode, setViewMode] = useState('dashboard'); // 'dashboard', 'carteira', 'analise'
     const [timeFrame, setTimeFrame] = useState('YTD'); // 7d, 30d, 90d, YTD, ALL
+    const [isSheetOpen, setIsSheetOpen] = useState(false);
+    const [editingInvestment, setEditingInvestment] = useState(null);
+    const [investmentToDelete, setInvestmentToDelete] = useState(null);
 
     // Filter Investments
     const filteredInvestments = context === 'consolidado'
         ? investments
         : investments.filter(i => i.origem === context);
 
-    const totalInvested = filteredInvestments.reduce((sum, i) => sum + i.valorAplicado, 0);
-    const totalCurrent = filteredInvestments.reduce((sum, i) => sum + i.valorAtual, 0);
+    const totalInvested = filteredInvestments.reduce((sum, i) => sum + (i.valorAplicado || 0), 0);
+    const totalCurrent = filteredInvestments.reduce((sum, i) => sum + (i.valorAtual || 0), 0);
     const totalReturn = totalCurrent - totalInvested;
     const returnPercentage = totalInvested > 0 ? ((totalReturn / totalInvested) * 100) : 0;
     const immediateTotal = filteredInvestments.filter(i => i.liquidez === 'imediata').reduce((sum, i) => sum + i.valorAtual, 0);
@@ -53,8 +59,8 @@ export default function InvestmentsPage() {
     const byType = filteredInvestments.reduce((acc, inv) => {
         const key = inv.tipo;
         if (!acc[key]) acc[key] = { aplicado: 0, atual: 0 };
-        acc[key].aplicado += inv.valorAplicado;
-        acc[key].atual += inv.valorAtual;
+        acc[key].aplicado += (inv.valorAplicado || 0);
+        acc[key].atual += (inv.valorAtual || 0);
         return acc;
     }, {});
 
@@ -92,21 +98,27 @@ export default function InvestmentsPage() {
                     </p>
                 </div>
 
-                <div className="flex bg-secondary p-1 rounded-lg self-start">
-                    {tabs.map(tab => (
-                        <button
-                            key={tab.id}
-                            onClick={() => setViewMode(tab.id)}
-                            className={cn(
-                                "px-4 py-2 text-sm font-medium rounded-md transition-all",
-                                viewMode === tab.id
-                                    ? "bg-primary text-primary-foreground shadow-sm"
-                                    : "text-muted-foreground hover:text-foreground"
-                            )}
-                        >
-                            {tab.label}
-                        </button>
-                    ))}
+                <div className="flex items-center gap-4 self-start md:self-auto">
+                    <div className="flex bg-secondary p-1 rounded-lg">
+                        {tabs.map(tab => (
+                            <button
+                                key={tab.id}
+                                onClick={() => setViewMode(tab.id)}
+                                className={cn(
+                                    "px-4 py-2 text-sm font-medium rounded-md transition-all",
+                                    viewMode === tab.id
+                                        ? "bg-primary text-primary-foreground shadow-sm"
+                                        : "text-muted-foreground hover:text-foreground"
+                                )}
+                            >
+                                {tab.label}
+                            </button>
+                        ))}
+                    </div>
+                    <Button onClick={() => setIsSheetOpen(true)} className="gradient-primary">
+                        <PlusCircle className="w-4 h-4 mr-2" />
+                        Novo Aporte
+                    </Button>
                 </div>
             </div>
 
@@ -202,12 +214,13 @@ export default function InvestmentsPage() {
                                         <th className="text-left px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Tags</th>
                                         <th className="text-right px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Valor Atual</th>
                                         <th className="text-right px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Rentabilidade</th>
-                                        <th className="text-center px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Risco</th>
+                                        <th className="text-center px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Liq.</th>
+                                        <th className="text-right px-6 py-4 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Ações</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-border/30">
                                     {filteredInvestments.map((inv) => (
-                                        <tr key={inv.id} className="hover:bg-secondary/20 transition-colors">
+                                        <tr key={inv.id} className="hover:bg-secondary/20 transition-colors group">
                                             <td className="px-6 py-4">
                                                 <div>
                                                     <p className="font-medium text-foreground">{inv.ativo}</p>
@@ -221,6 +234,7 @@ export default function InvestmentsPage() {
                                                             #{tag}
                                                         </span>
                                                     ))}
+                                                    {!inv.tags?.length && <span className="text-xs text-muted-foreground">-</span>}
                                                 </div>
                                             </td>
                                             <td className="px-6 py-4 text-right font-semibold text-foreground">
@@ -234,15 +248,31 @@ export default function InvestmentsPage() {
                                                     {inv.rentabilidadePercentual >= 0 ? '+' : ''}{formatPercent(inv.rentabilidadePercentual)}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 text-center">
-                                                <span className={cn(
-                                                    "text-xs px-2 py-1 rounded-md font-medium",
-                                                    inv.riskGrade === 'Conservador' ? "bg-success/10 text-success" :
-                                                        inv.riskGrade === 'Moderado' ? "bg-warning/10 text-warning" :
-                                                            "bg-destructive/10 text-destructive"
-                                                )}>
-                                                    {inv.riskGrade}
-                                                </span>
+                                            <td className="px-6 py-4 text-center text-xs text-muted-foreground">
+                                                {liquidityLabels[inv.liquidez] || inv.liquidez}
+                                            </td>
+                                            <td className="px-6 py-4 text-right">
+                                                <div className="flex items-center justify-end gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="h-8 w-8 p-0"
+                                                        onClick={() => {
+                                                            setEditingInvestment(inv);
+                                                            setIsSheetOpen(true);
+                                                        }}
+                                                    >
+                                                        <Edit className="w-4 h-4 text-muted-foreground hover:text-primary" />
+                                                    </Button>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="h-8 w-8 p-0"
+                                                        onClick={() => setInvestmentToDelete(inv.id)}
+                                                    >
+                                                        <Trash2 className="w-4 h-4 text-muted-foreground hover:text-destructive" />
+                                                    </Button>
+                                                </div>
                                             </td>
                                         </tr>
                                     ))}
@@ -255,6 +285,58 @@ export default function InvestmentsPage() {
                 </div>
             )}
 
+            <Sheet open={isSheetOpen} onOpenChange={(open) => {
+                if (!open) setEditingInvestment(null);
+                setIsSheetOpen(open);
+            }}>
+                <SheetContent>
+                    <SheetHeader className="mb-6">
+                        <SheetTitle>{editingInvestment ? 'Editar Investimento' : 'Novo Investimento'}</SheetTitle>
+                        <SheetDescription>
+                            {editingInvestment ? 'Atualize os dados do seu investimento.' : 'Cadastre um novo aporte ou ativo.'}
+                        </SheetDescription>
+                    </SheetHeader>
+                    <InvestmentForm
+                        initialData={editingInvestment}
+                        onSubmit={(data) => {
+                            if (editingInvestment) {
+                                updateInvestment(editingInvestment.id, data);
+                            } else {
+                                addInvestment(data);
+                            }
+                            setIsSheetOpen(false);
+                            setEditingInvestment(null);
+                        }}
+                        onCancel={() => {
+                            setIsSheetOpen(false);
+                            setEditingInvestment(null);
+                        }}
+                    />
+                </SheetContent>
+            </Sheet>
+
+            <AlertDialog open={!!investmentToDelete} onOpenChange={(open) => !open && setInvestmentToDelete(null)}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Excluir Investimento</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Tem certeza que deseja excluir este investimento? Esta ação não pode ser desfeita.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            onClick={() => {
+                                removeInvestment(investmentToDelete);
+                                setInvestmentToDelete(null);
+                            }}
+                        >
+                            Excluir
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
             {viewMode === 'analise' && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                     <div className="glass-card rounded-xl p-6">
@@ -294,7 +376,8 @@ export default function InvestmentsPage() {
                         </div>
                     </div>
                 </div>
-            )}
-        </div>
+            )
+            }
+        </div >
     );
 }

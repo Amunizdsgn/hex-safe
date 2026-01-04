@@ -112,7 +112,7 @@ export function DealDetail({ deal, isOpen, onClose, onAddComment, onUpdateDeal }
                                 )}
                             </div>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-4">
                             {isEditing ? (
                                 <>
                                     <Button size="sm" variant="outline" onClick={cancelEditing}>
@@ -134,13 +134,13 @@ export function DealDetail({ deal, isOpen, onClose, onAddComment, onUpdateDeal }
                             {isEditing ? (
                                 <div className="flex gap-4 w-full mt-2">
                                     <div className="flex-1">
-                                        <Label className="text-xs">Valor (R$)</Label>
+                                        <Label className="text-xs text-zinc-300">Valor (R$)</Label>
                                         <Input
                                             name="value"
                                             type="number"
                                             value={formData.value}
                                             onChange={handleChange}
-                                            className="h-8"
+                                            className="h-8 bg-zinc-900 border-zinc-700 text-white"
                                         />
                                     </div>
                                     <div className="flex-1">

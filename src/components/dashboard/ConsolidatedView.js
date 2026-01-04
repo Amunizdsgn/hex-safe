@@ -1,43 +1,50 @@
 import { Building2, User, ArrowRight, Wallet } from 'lucide-react';
-import {
-    companyRevenues,
-    personalRevenues,
-    companyExpenses,
-    personalExpenses,
-    transfers,
-    financialAccounts,
-    investments,
-    formatCurrency
-} from '@/data/mockData';
+import { useFinancialContext } from '@/contexts/FinancialContext';
+import { formatCurrency } from '@/lib/utils';
 
 export function ConsolidatedView() {
+    const { transactions, accounts, investments } = useFinancialContext();
+
     // Company metrics
-    const companyRevenueTotal = companyRevenues.reduce((sum, r) => sum + r.valor, 0);
-    const companyExpenseTotal = companyExpenses.reduce((sum, e) => sum + e.valor, 0);
+    const companyTransactions = transactions.filter(t => t.origem === 'empresa' || t.origem === 'conta');
+    const companyRevenueTotal = companyTransactions
+        .filter(t => ['revenue', 'receita', 'entrada'].includes(t.type))
+        .reduce((sum, r) => sum + Number(r.valor), 0);
+    const companyExpenseTotal = companyTransactions
+        .filter(t => ['expense', 'despesa', 'saida'].includes(t.type))
+        .reduce((sum, e) => sum + Number(e.valor), 0);
     const companyProfit = companyRevenueTotal - companyExpenseTotal;
 
     // Personal metrics
-    const personalRevenueTotal = personalRevenues.reduce((sum, r) => sum + r.valor, 0);
-    const personalExpenseTotal = personalExpenses.reduce((sum, e) => sum + e.valor, 0);
+    const personalTransactions = transactions.filter(t => t.origem === 'pessoal');
+    const personalRevenueTotal = personalTransactions
+        .filter(t => ['revenue', 'receita', 'entrada'].includes(t.type))
+        .reduce((sum, r) => sum + Number(r.valor), 0);
+    const personalExpenseTotal = personalTransactions
+        .filter(t => ['expense', 'despesa', 'saida', 'card_payment'].includes(t.type))
+        .reduce((sum, e) => sum + Number(e.valor), 0);
     const personalBalance = personalRevenueTotal - personalExpenseTotal;
 
-    // Transfers
-    const totalTransfers = transfers.reduce((sum, t) => sum + t.valor, 0);
+    // Transfers (Identify transfers from company to personal)
+    // Heuristic: Transactions with type 'transfer' or specific category
+    // For now, assume 0 or derived from categories if available. 
+    // Simplify: Just use 0 as we don't have explicit transfer link in this iteration without categories.
+    const totalTransfers = 0;
 
     // Total patrimony
-    const allAccountsTotal = financialAccounts.reduce((sum, a) => sum + a.saldoAtual, 0);
-    const allInvestmentsTotal = investments.reduce((sum, i) => sum + i.valorAtual, 0);
+    const allAccountsTotal = accounts.reduce((sum, a) => sum + Number(a.saldoAtual || 0), 0);
+    const allInvestmentsTotal = investments.reduce((sum, i) => sum + Number(i.valorAtual || 0), 0);
     const totalPatrimony = allAccountsTotal + allInvestmentsTotal;
 
     // Financial independence
-    const monthlyPersonalCost = personalExpenseTotal;
+    const monthlyPersonalCost = personalExpenseTotal; // Should be monthly average but using total for now
     const monthsCompanyCanSustain = monthlyPersonalCost > 0 ? companyProfit / monthlyPersonalCost : 0;
 
     return (
         <div className="space-y-6">
             {/* Flow between company and personal */}
             <div className="glass-card rounded-xl p-6 animate-slide-up">
-                <h3 className="text-lg font-semibold text-foreground mb-6">Fluxo Financeiro</h3>
+                <h3 className="text-lg font-semibold text-foreground mb-6">Fluxo Financeiro (Consolidado)</h3>
 
                 <div className="flex flex-col md:flex-row items-center justify-between gap-4">
                     {/* Company */}
@@ -48,7 +55,7 @@ export function ConsolidatedView() {
                             </div>
                             <div>
                                 <p className="text-sm font-medium text-foreground">Empresa</p>
-                                <p className="text-xs text-muted-foreground">Lucro mensal</p>
+                                <p className="text-xs text-muted-foreground">Lucro Líquido</p>
                             </div>
                         </div>
                         <p className="text-2xl font-bold kpi-value">{formatCurrency(companyProfit)}</p>
@@ -71,7 +78,7 @@ export function ConsolidatedView() {
                             </div>
                             <div>
                                 <p className="text-sm font-medium text-foreground">Pessoal</p>
-                                <p className="text-xs text-muted-foreground">Saldo mensal</p>
+                                <p className="text-xs text-muted-foreground">Saldo Mensal</p>
                             </div>
                         </div>
                         <p className={`text-2xl font-bold ${personalBalance >= 0 ? 'text-success' : 'text-destructive'}`}>

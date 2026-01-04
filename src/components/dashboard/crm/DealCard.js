@@ -53,13 +53,13 @@ export function DealCard({ deal, onMoveStage, onClick, onDuplicate, onDelete }) 
                         </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => onMoveStage(deal.id, 'next')}>
+                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onMoveStage(deal.id, 'next'); }}>
                             Avançar Etapa <ArrowRight className="w-3 h-3 ml-2" />
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={onDuplicate}>
+                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onDuplicate(); }}>
                             Duplicar <Copy className="w-3 h-3 ml-2" />
                         </DropdownMenuItem>
-                        <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={onDelete}>
+                        <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={(e) => { e.stopPropagation(); onDelete(); }}>
                             Excluir <Trash className="w-3 h-3 ml-auto" />
                         </DropdownMenuItem>
                     </DropdownMenuContent>

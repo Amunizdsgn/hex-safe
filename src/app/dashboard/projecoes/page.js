@@ -1,196 +1,274 @@
 "use client"
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useFinancialContext } from '@/contexts/FinancialContext';
-import {
-    companyRevenues,
-    companyExpenses,
-    personalExpenses,
-    servicePerformance,
-    formatCurrency,
-} from '@/data/mockData';
-import { Calculator, AlertCircle } from 'lucide-react';
-
-// New Components
-import { DynamicProjection } from '@/components/dashboard/projections/DynamicProjection';
-import { GoalGap } from '@/components/dashboard/projections/GoalGap';
-import { BillingVelocity } from '@/components/dashboard/projections/BillingVelocity';
-import { RevenuePipeline } from '@/components/dashboard/projections/RevenuePipeline';
-import { ClosingRisk } from '@/components/dashboard/projections/ClosingRisk';
-import { ScenarioSensitivity } from '@/components/dashboard/projections/ScenarioSensitivity';
-import { ProjectedCashFlow } from '@/components/dashboard/projections/ProjectedCashFlow';
-import { PendingClassification } from '@/components/dashboard/projections/PendingClassification';
-import { EfficiencyIndicators } from '@/components/dashboard/projections/EfficiencyIndicators';
-import { RecommendedActions } from '@/components/dashboard/projections/RecommendedActions';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { ArrowUpCircle, ArrowDownCircle, Wallet, AlertCircle, CheckCircle2, Clock, Target, Edit2 } from 'lucide-react';
+import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 export default function ProjectionsPage() {
-    const { context } = useFinancialContext();
-    const [simulatedExtras, setSimulatedExtras] = useState({ project: false, allPendings: false });
-    const [sensitivity, setSensitivity] = useState({ pendingRate: 80, expenseRate: 100 });
+    const { transactions, selectedMonth, selectedYear } = useFinancialContext();
 
-    // Company Data Processing
-    const monthlyGoal = 80000;
-    const workingDays = 22;
-    const daysPassed = 12; // Mock current day
+    // --- Goal State ---
+    const [monthlyGoal, setMonthlyGoal] = useState(() => {
+        if (typeof window !== 'undefined') {
+            return Number(localStorage.getItem('monthlyGoal')) || 20000;
+        }
+        return 20000;
+    });
+    const [isEditingGoal, setIsEditingGoal] = useState(false);
 
-    const { transactions } = useFinancialContext(); // Destructure transactions directly
-    // ...
-    const companyTransactions = transactions.filter(t => t.origem === 'empresa');
+    const handleSaveGoal = () => {
+        localStorage.setItem('monthlyGoal', monthlyGoal);
+        setIsEditingGoal(false);
+    };
 
-    // Heuristics for Revenue vs Expense
-    // Revenue: has 'servico' OR type='receita' OR (no category and positive implied) - Mock data is tricky, let's stick to 'servico' keyword existence for revenue in mock, or explicit type.
-    const isRevenue = (t) => t.servico || t.type === 'receita' || t.cliente;
-    const isExpense = (t) => !isRevenue(t);
+    // --- Calculations ---
 
-    const currentRevenue = companyTransactions
-        .filter(t => isRevenue(t) && (t.status === 'pago' || t.status === 'recebido'))
-        .reduce((sum, r) => sum + r.valor, 0);
+    const metrics = useMemo(() => {
+        const currentMonthTransactions = transactions.filter(t => {
+            const tDate = new Date(t.date);
+            return tDate.getMonth() === selectedMonth && tDate.getFullYear() === selectedYear;
+        });
 
-    const pendingRevenue = companyTransactions
-        .filter(t => isRevenue(t) && t.status === 'pendente')
-        .reduce((sum, r) => sum + r.valor, 0);
+        const incomes = currentMonthTransactions.filter(t => ['income', 'revenue', 'receita'].includes(t.type));
+        const expenses = currentMonthTransactions.filter(t => ['expense', 'despesa', 'saida', 'card_payment', 'pro_labore'].includes(t.type));
 
-    const currentExpenses = companyTransactions
-        .filter(t => isExpense(t) && t.status === 'pago')
-        .reduce((sum, e) => sum + e.valor, 0);
+        // Income Metrics
+        const incomePaid = incomes.filter(t => t.status === 'pago').reduce((sum, t) => sum + Number(t.valor), 0);
+        const incomePending = incomes.filter(t => t.status === 'pendente' || t.status === 'vencido').reduce((sum, t) => sum + Number(t.valor), 0);
+        const incomeTotal = incomePaid + incomePending;
 
-    const pendingExpenses = companyTransactions
-        .filter(t => isExpense(t) && t.status === 'pendente')
-        .reduce((sum, e) => sum + e.valor, 0);
+        // Expense Metrics
+        const expensePaid = expenses.filter(t => t.status === 'pago').reduce((sum, t) => sum + Number(t.valor), 0);
+        const expensePending = expenses.filter(t => t.status === 'pendente' || t.status === 'vencido').reduce((sum, t) => sum + Number(t.valor), 0);
+        const expenseTotal = expensePaid + expensePending;
 
-    const avgTicket = servicePerformance.reduce((sum, s) => sum + s.ticketMedio, 0) / servicePerformance.length;
+        // Breakdown by Category for analysis (Simple Top 3)
+        // Grouping incomes
+        const incomeByCategory = incomes.reduce((acc, t) => {
+            acc[t.category || 'Outros'] = (acc[t.category || 'Outros'] || 0) + Number(t.valor);
+            return acc;
+        }, {});
 
-    // Simulation Calculations
-    let simulatedRevenue = currentRevenue;
+        // Grouping expenses
+        const expenseByCategory = expenses.reduce((acc, t) => {
+            acc[t.category || 'Outros'] = (acc[t.category || 'Outros'] || 0) + Number(t.valor);
+            return acc;
+        }, {});
 
-    // Add pending revenue based on sensitivity or toggle
-    const effectivePendingRate = simulatedExtras.allPendings ? 100 : sensitivity.pendingRate;
-    simulatedRevenue += pendingRevenue * (effectivePendingRate / 100);
+        return {
+            income: { paid: incomePaid, pending: incomePending, total: incomeTotal, byCategory: incomeByCategory },
+            expense: { paid: expensePaid, pending: expensePending, total: expenseTotal, byCategory: expenseByCategory },
+            balance: incomeTotal - expenseTotal
+        };
+    }, [transactions, selectedMonth, selectedYear]);
 
-    // Add simulated project
-    if (simulatedExtras.project) {
-        simulatedRevenue += 15000; // Average project value mock
-    }
+    // Format Currency Helper
+    const formatBRL = (value) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
-    const simulatedExpenses = currentExpenses + (pendingExpenses * (sensitivity.expenseRate / 100));
-    const simulatedProfit = simulatedRevenue - simulatedExpenses;
-    const simulatedMargin = simulatedRevenue > 0 ? (simulatedProfit / simulatedRevenue) * 100 : 0;
-
-    // Handlers
-    const handleToggleProject = (val) => setSimulatedExtras(prev => ({ ...prev, project: val }));
-    const handleTogglePendings = (val) => setSimulatedExtras(prev => ({ ...prev, allPendings: val }));
-    const handlePendingRateChange = (val) => setSensitivity(prev => ({ ...prev, pendingRate: val }));
-    const handleExpenseRateChange = (val) => setSensitivity(prev => ({ ...prev, expenseRate: val }));
-
-
-    // Personal Context Fallback (unchanged logic, just layout adjustments if needed)
-    if (context === 'pessoal') {
-        const totalPersonalExpenses = personalExpenses.reduce((sum, e) => sum + e.valor, 0);
-        const personalPending = personalExpenses.filter(e => e.status === 'pendente').reduce((sum, e) => sum + e.valor, 0);
-        return (
-            <div className="space-y-6">
-                <div>
-                    <h2 className="text-2xl font-bold text-foreground">Projeções Pessoais</h2>
-                    <p className="text-muted-foreground">Previsão de gastos e impacto no orçamento</p>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="glass-card rounded-xl p-6">
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center">
-                                <Calculator className="w-5 h-5 text-primary" />
-                            </div>
-                            <div>
-                                <p className="text-sm text-muted-foreground">Gastos Projetados</p>
-                                <p className="text-2xl font-bold kpi-value">{formatCurrency(totalPersonalExpenses + personalPending)}</p>
-                            </div>
-                        </div>
-                        <div className="space-y-3 mt-4">
-                            <div className="flex justify-between text-sm">
-                                <span className="text-muted-foreground">Gastos realizados</span>
-                                <span className="text-foreground font-medium">{formatCurrency(totalPersonalExpenses - personalPending)}</span>
-                            </div>
-                            <div className="flex justify-between text-sm">
-                                <span className="text-muted-foreground">Gastos pendentes</span>
-                                <span className="text-warning font-medium">{formatCurrency(personalPending)}</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        )
-    }
+    // Progress calculation
+    const incomeProgress = metrics.income.total > 0 ? (metrics.income.paid / metrics.income.total) * 100 : 0;
+    const expenseProgress = metrics.expense.total > 0 ? (metrics.expense.paid / metrics.expense.total) * 100 : 0;
 
     return (
-        <div className="space-y-6">
-            <div>
-                <h2 className="text-2xl font-bold text-foreground">Gestão de Projeções</h2>
-                <p className="text-muted-foreground">Simulação de cenários e previsibilidade financeira</p>
-            </div>
-
-            {/* Top Section: Gap, Pipeline, Velocity */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <GoalGap
-                    current={simulatedRevenue}
-                    target={monthlyGoal}
-                    avgTicket={avgTicket}
-                />
-                <BillingVelocity
-                    currentRevenue={currentRevenue}
-                    monthlyGoal={monthlyGoal}
-                    workingDays={workingDays}
-                    daysPassed={daysPassed}
-                />
-                <RevenuePipeline />
-            </div>
-
-            {/* Middle Section: Efficiency and Simulation */}
-            <EfficiencyIndicators avgTicket={avgTicket} margin={simulatedMargin} />
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {/* Left Column: Logic & Controls */}
-                <div className="space-y-6">
-                    <DynamicProjection
-                        baseRevenue={currentRevenue + (pendingRevenue * 0.8)} // Realistic base
-                        simulatedRevenue={simulatedRevenue}
-                        onToggleProject={handleToggleProject}
-                        onTogglePendings={handleTogglePendings}
-                        simulatedExtras={simulatedExtras}
-                    />
-                    <ScenarioSensitivity
-                        pendingRate={sensitivity.pendingRate}
-                        expenseRate={sensitivity.expenseRate}
-                        onPendingChange={handlePendingRateChange}
-                        onExpenseChange={handleExpenseRateChange}
-                    />
-                    <ClosingRisk
-                        pendingRevenue={pendingRevenue}
-                        totalProjectedRevenue={simulatedRevenue}
-                    />
+        <div className="space-y-8 animate-in fade-in duration-500">
+            <div className="flex justify-between items-start">
+                <div>
+                    <h2 className="text-2xl font-bold text-foreground">Projeção de Fluxo de Caixa</h2>
+                    <p className="text-muted-foreground">Previsão simples de entradas, saídas e saldo final para o mês.</p>
                 </div>
 
-                {/* Right Column: Visuals & Data */}
-                <div className="lg:col-span-2 space-y-6">
-                    <ProjectedCashFlow />
+                {/* Goal Input Section */}
+                <div className="flex flex-col items-end gap-1">
+                    <label className="text-xs text-muted-foreground font-medium">Meta Mensal</label>
+                    {isEditingGoal ? (
+                        <div className="flex items-center gap-2 animate-in fade-in slide-in-from-right-4 duration-300">
+                            <Input
+                                type="number"
+                                value={monthlyGoal}
+                                onChange={(e) => setMonthlyGoal(Number(e.target.value))}
+                                className="h-8 w-32 bg-background border-primary/50 focus-visible:ring-primary"
+                                autoFocus
+                            />
+                            <Button size="sm" onClick={handleSaveGoal} className="h-8">Salvar</Button>
+                        </div>
+                    ) : (
+                        <div
+                            className="flex items-center gap-2 px-3 py-1.5 bg-secondary/10 hover:bg-secondary/20 rounded-lg cursor-pointer border border-transparent hover:border-border transition-all group"
+                            onClick={() => setIsEditingGoal(true)}
+                        >
+                            <Target className="w-4 h-4 text-primary group-hover:scale-110 transition-transform" />
+                            <span className="text-xl font-bold text-foreground">
+                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(monthlyGoal)}
+                            </span>
+                            <Edit2 className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </div>
+                    )}
+                </div>
+            </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <PendingClassification />
-                        <RecommendedActions />
+            {/* --- Goal Progress Section --- */}
+            <Card className="bg-gradient-to-r from-background to-secondary/5 border-primary/20">
+                <CardContent className="pt-6">
+                    <div className="flex justify-between items-end mb-2">
+                        <div className="space-y-1">
+                            <h3 className="font-bold text-sm text-muted-foreground flex items-center gap-2">
+                                <Target className="w-4 h-4" /> Progresso da Meta
+                            </h3>
+                            <div className="text-2xl font-bold">
+                                {((metrics.income.total / monthlyGoal) * 100).toFixed(1)}%
+                            </div>
+                        </div>
+                        <div className="text-right">
+                            <div className="text-xs text-muted-foreground mb-1">Falta para a Meta</div>
+                            <div className="font-mono font-bold text-primary">
+                                {metrics.income.total >= monthlyGoal
+                                    ? "Meta Batida! 🚀"
+                                    : formatBRL(Math.max(0, monthlyGoal - metrics.income.total))}
+                            </div>
+                        </div>
+                    </div>
+                    <Progress value={(metrics.income.total / monthlyGoal) * 100} className="h-3" />
+                </CardContent>
+            </Card>
+
+            {/* --- Main Cards Row --- */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+                {/* 1. Incomes Card */}
+                <Card className="border-l-4 border-l-success bg-gradient-to-br from-background to-success/5 shadow-lg">
+                    <CardHeader className="pb-2">
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <CardTitle className="text-lg text-success flex items-center gap-2">
+                                    <ArrowUpCircle className="w-5 h-5" /> Entradas Previstas
+                                </CardTitle>
+                                <CardDescription>Recebido + A Receber</CardDescription>
+                            </div>
+                        </div>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-3xl font-bold mb-4">{formatBRL(metrics.income.total)}</div>
+
+                        <div className="space-y-3">
+                            <div className="flex justify-between text-sm">
+                                <span className="text-muted-foreground flex items-center gap-1"><CheckCircle2 className="w-3 h-3 text-success" /> Já Recebido</span>
+                                <span className="font-bold text-success/80">{formatBRL(metrics.income.paid)}</span>
+                            </div>
+                            <Progress value={incomeProgress} className="h-2 bg-success/20" indicatorClassName="bg-success" />
+                            <div className="flex justify-between text-sm">
+                                <span className="text-muted-foreground flex items-center gap-1"><Clock className="w-3 h-3" /> Falta Receber</span>
+                                <span className="font-bold text-muted-foreground">{formatBRL(metrics.income.pending)}</span>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* 2. Expenses Card */}
+                <Card className="border-l-4 border-l-destructive bg-gradient-to-br from-background to-destructive/5 shadow-lg">
+                    <CardHeader className="pb-2">
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <CardTitle className="text-lg text-destructive flex items-center gap-2">
+                                    <ArrowDownCircle className="w-5 h-5" /> Saídas Previstas
+                                </CardTitle>
+                                <CardDescription>Pago + A Pagar</CardDescription>
+                            </div>
+                        </div>
+                    </CardHeader>
+                    <CardContent>
+                        <div className="text-3xl font-bold mb-4">{formatBRL(metrics.expense.total)}</div>
+
+                        <div className="space-y-3">
+                            <div className="flex justify-between text-sm">
+                                <span className="text-muted-foreground flex items-center gap-1"><CheckCircle2 className="w-3 h-3 text-destructive" /> Já Pago</span>
+                                <span className="font-bold text-destructive/80">{formatBRL(metrics.expense.paid)}</span>
+                            </div>
+                            <Progress value={expenseProgress} className="h-2 bg-destructive/20" indicatorClassName="bg-destructive" />
+                            <div className="flex justify-between text-sm">
+                                <span className="text-muted-foreground flex items-center gap-1"><Clock className="w-3 h-3" /> Falta Pagar</span>
+                                <span className="font-bold text-muted-foreground">{formatBRL(metrics.expense.pending)}</span>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+
+                {/* 3. Balance Card */}
+                <Card className={`border-l-4 shadow-lg ${metrics.balance >= 0 ? 'border-l-blue-500 bg-gradient-to-br from-background to-blue-500/5' : 'border-l-red-500 bg-gradient-to-br from-background to-red-500/5'}`}>
+                    <CardHeader className="pb-2">
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <CardTitle className={`text-lg flex items-center gap-2 ${metrics.balance >= 0 ? 'text-blue-500' : 'text-red-500'}`}>
+                                    <Wallet className="w-5 h-5" /> Saldo Projetado
+                                </CardTitle>
+                                <CardDescription>O que sobra no final do mês</CardDescription>
+                            </div>
+                        </div>
+                    </CardHeader>
+                    <CardContent>
+                        <div className={`text-3xl font-bold mb-4 ${metrics.balance >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                            {formatBRL(metrics.balance)}
+                        </div>
+
+                        <div className="p-3 rounded-lg bg-secondary/10 border border-border/50 text-sm mb-2">
+                            <div className="flex justify-between items-center mb-1">
+                                <span className="text-muted-foreground">Margem Projetada:</span>
+                                <span className="font-bold">
+                                    {metrics.income.total > 0 ? ((metrics.balance / metrics.income.total) * 100).toFixed(1) : 0}%
+                                </span>
+                            </div>
+                            <p className="text-xs text-muted-foreground leading-tight">
+                                {metrics.balance > 0
+                                    ? "Parabéns! Previsão de caixa positivo esse mês."
+                                    : "Atenção! As despesas superam as receitas previstas."}
+                            </p>
+                        </div>
+                    </CardContent>
+                </Card>
+            </div>
+
+            {/* --- Simplest Summary List --- */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {/* Income Breakdown */}
+                <div className="space-y-4">
+                    <h3 className="font-bold text-muted-foreground uppercase text-xs tracking-wider flex items-center gap-2">
+                        <ArrowUpCircle className="w-4 h-4" /> Composição das Entradas
+                    </h3>
+                    <div className="space-y-2">
+                        {Object.entries(metrics.income.byCategory).sort((a, b) => b[1] - a[1]).map(([cat, val]) => (
+                            <div key={cat} className="flex justify-between items-center text-sm p-3 bg-secondary/5 rounded border border-border/40">
+                                <span className="font-medium">{cat}</span>
+                                <span className="font-mono text-success">{formatBRL(val)}</span>
+                            </div>
+                        ))}
+                        {Object.keys(metrics.income.byCategory).length === 0 && (
+                            <div className="text-center py-6 text-muted-foreground text-sm italic">Nenhuma entrada registrada.</div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Expense Breakdown */}
+                <div className="space-y-4">
+                    <h3 className="font-bold text-muted-foreground uppercase text-xs tracking-wider flex items-center gap-2">
+                        <ArrowDownCircle className="w-4 h-4" /> Composição das Saídas
+                    </h3>
+                    <div className="space-y-2">
+                        {Object.entries(metrics.expense.byCategory).sort((a, b) => b[1] - a[1]).map(([cat, val]) => (
+                            <div key={cat} className="flex justify-between items-center text-sm p-3 bg-secondary/5 rounded border border-border/40">
+                                <span className="font-medium">{cat}</span>
+                                <span className="font-mono text-destructive">{formatBRL(val)}</span>
+                            </div>
+                        ))}
+                        {Object.keys(metrics.expense.byCategory).length === 0 && (
+                            <div className="text-center py-6 text-muted-foreground text-sm italic">Nenhuma saída registrada.</div>
+                        )}
                     </div>
                 </div>
             </div>
 
-            {/* Summary Footer */}
-            <div className="glass-card rounded-xl p-4 border border-primary/20 bg-primary/5 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                    <AlertCircle className="w-5 h-5 text-primary" />
-                    <span className="text-sm font-medium">Resumo da Simulação:</span>
-                    <span className="text-xs text-muted-foreground">Considerando taxas personalizadas + extras</span>
-                </div>
-                <div className="text-right">
-                    <p className="text-xs text-muted-foreground">Lucro Projetado</p>
-                    <p className="text-xl font-bold text-success">{formatCurrency(simulatedProfit)}</p>
-                </div>
-            </div>
         </div>
     );
 }

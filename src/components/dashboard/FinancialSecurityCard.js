@@ -1,29 +1,34 @@
 "use client"
 
 import { Shield, AlertTriangle, CheckCircle2 } from 'lucide-react';
-import { personalExpenses, financialAccounts, investments, formatCurrency } from '@/data/mockData';
+import { formatCurrency } from '@/data/mockData';
+import { useFinancialContext } from '@/contexts/FinancialContext';
 import { cn } from '@/lib/utils';
 
 export function FinancialSecurityCard() {
-    // Calculate monthly cost of living (fixed + average variable)
-    const monthlyFixedCosts = personalExpenses
-        .filter(e => e.recorrente)
-        .reduce((sum, e) => sum + e.valor, 0);
+    const { accounts, investments, transactions } = useFinancialContext();
 
-    const monthlyVariableCosts = personalExpenses
-        .filter(e => !e.recorrente)
-        .reduce((sum, e) => sum + e.valor, 0);
+    // Calculate monthly cost of living (Real Data: Average of last 3 months or just last 30 days)
+    // Simplify: Sum of expenses in the last 30 days where origin is personal
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    const totalMonthlyCost = monthlyFixedCosts + monthlyVariableCosts;
+    const personalExpenses = transactions.filter(t =>
+        (t.origem === 'pessoal' || t.origem === 'conta') &&
+        ['expense', 'despesa', 'saida', 'card_payment'].includes(t.type) &&
+        new Date(t.date) >= thirtyDaysAgo
+    );
+
+    const totalMonthlyCost = personalExpenses.reduce((sum, e) => sum + Number(e.valor), 0);
 
     // Calculate total reserves (personal accounts + investments with immediate liquidity)
-    const personalAccounts = financialAccounts.filter(a => a.origem === 'pessoal');
-    const accountsTotal = personalAccounts.reduce((sum, a) => sum + a.saldoAtual, 0);
+    const personalAccounts = accounts.filter(a => a.type === 'checking' || a.type === 'savings' || !a.type); // Broad filter
+    const accountsTotal = personalAccounts.reduce((sum, a) => sum + Number(a.saldoAtual), 0);
 
     const liquidInvestments = investments.filter(
         i => i.origem === 'pessoal' && i.liquidez === 'imediata'
     );
-    const liquidInvestmentsTotal = liquidInvestments.reduce((sum, i) => sum + i.valorAtual, 0);
+    const liquidInvestmentsTotal = liquidInvestments.reduce((sum, i) => sum + Number(i.valorAtual), 0);
 
     const totalReserve = accountsTotal + liquidInvestmentsTotal;
     const monthsOfSecurity = totalMonthlyCost > 0 ? totalReserve / totalMonthlyCost : 0;
