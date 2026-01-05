@@ -10,6 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import { Calendar as CalendarIcon, Clock, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { createClient } from '@/lib/supabase/client';
+import { cn } from '@/lib/utils';
 
 export function TaskDetailsSheet({ isOpen, onClose, task, onSave, onDelete }) {
     const supabase = createClient();
