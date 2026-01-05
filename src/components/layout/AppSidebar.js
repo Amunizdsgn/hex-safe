@@ -14,6 +14,7 @@ import {
     Kanban,
     CheckSquare,
     Target,
+    PenTool
 } from 'lucide-react';
 import {
     Sidebar,
@@ -27,6 +28,8 @@ import {
     useSidebar,
 } from "@/components/ui/sidebar"
 import { useFinancialContext } from '@/contexts/FinancialContext';
+import { useExportData } from '@/hooks/useExportData';
+import { Download, Loader2 } from 'lucide-react';
 
 const navItems = [
     { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, contexts: ['empresa', 'pessoal', 'consolidado'] },
@@ -35,6 +38,7 @@ const navItems = [
     { path: '/dashboard/clientes', label: 'Clientes', icon: Users, contexts: ['empresa'] },
     { path: '/dashboard/crm', label: 'CRM', icon: Kanban, contexts: ['empresa'] },
     { path: '/dashboard/canais', label: 'Canais', icon: Megaphone, contexts: ['empresa'] },
+    { path: '/dashboard/design', label: 'Design System', icon: PenTool, contexts: ['empresa'] },
     { path: '/dashboard/projecoes', label: 'Projeções', icon: LineChart, contexts: ['empresa', 'pessoal', 'consolidado'] },
     { path: '/dashboard/investimentos', label: 'Investimentos', icon: PiggyBank, contexts: ['pessoal', 'consolidado'] },
     { path: '/dashboard/carteiras', label: 'Carteiras', icon: Wallet, contexts: ['empresa', 'pessoal', 'consolidado'] },
@@ -46,6 +50,7 @@ export function AppSidebar({ ...props }) {
     const { context } = useFinancialContext();
     const pathname = usePathname();
     const filteredItems = navItems.filter(item => item.contexts.includes(context));
+    const { exportData, isExporting } = useExportData();
 
     return (
         <Sidebar collapsible="icon" {...props} className="border-r border-sidebar-border bg-sidebar">
@@ -83,12 +88,19 @@ export function AppSidebar({ ...props }) {
             </SidebarContent>
 
             <SidebarFooter>
-                <div className="p-2 group-data-[collapsible=icon]:hidden">
-                    <div className="rounded-md border bg-card p-2 text-xs text-muted-foreground">
-                        <p>Última atualização</p>
-                        <p className="text-foreground font-medium">Hoje, 14:32</p>
-                    </div>
-                </div>
+                <SidebarMenu>
+                    <SidebarMenuItem>
+                        <SidebarMenuButton
+                            onClick={exportData}
+                            disabled={isExporting}
+                            className="text-muted-foreground hover:text-primary transition-colors"
+                            tooltip="Fazer Backup"
+                        >
+                            {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                            <span>{isExporting ? 'Exportando...' : 'Fazer Backup'}</span>
+                        </SidebarMenuButton>
+                    </SidebarMenuItem>
+                </SidebarMenu>
             </SidebarFooter>
             <SidebarRail />
         </Sidebar>

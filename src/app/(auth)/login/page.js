@@ -73,7 +73,7 @@ export default function LoginPage() {
                     <div className="space-y-2">
                         <div className="flex items-center justify-between">
                             <Label htmlFor="password">Senha</Label>
-                            <Link href="#" className="text-xs text-primary hover:text-hover">
+                            <Link href="/recuperar-senha" className="text-xs text-primary hover:text-hover">
                                 Esqueceu a senha?
                             </Link>
                         </div>

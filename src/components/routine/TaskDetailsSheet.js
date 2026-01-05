@@ -21,6 +21,7 @@ export function TaskDetailsSheet({ isOpen, onClose, task, onSave, onDelete }) {
     const [time, setTime] = useState(''); // HH:MM
     const [isHabit, setIsHabit] = useState(false);
     const [reminder, setReminder] = useState(false);
+    const [priority, setPriority] = useState('medium');
     const [subtasks, setSubtasks] = useState([]); // Subtasks state
 
     useEffect(() => {
@@ -28,6 +29,7 @@ export function TaskDetailsSheet({ isOpen, onClose, task, onSave, onDelete }) {
             setTitle(task.title || '');
             setDescription(task.description || '');
             setIsHabit(task.is_habit || false);
+            setPriority(task.priority || 'medium');
             setSubtasks(task.subtasks || []); // Load subtasks
 
             // Parse timestamps
@@ -50,6 +52,7 @@ export function TaskDetailsSheet({ isOpen, onClose, task, onSave, onDelete }) {
             setTitle('');
             setDescription('');
             setIsHabit(false);
+            setPriority('medium');
             setDate(new Date().toISOString().split('T')[0]);
             setTime('');
             setReminder(false);
@@ -76,6 +79,7 @@ export function TaskDetailsSheet({ isOpen, onClose, task, onSave, onDelete }) {
             title,
             description,
             is_habit: isHabit,
+            priority,
             start_at: startAt,
             reminder_minutes: reminder ? 30 : null, // Default 30 min reminder
             subtasks: subtasks,
@@ -88,132 +92,155 @@ export function TaskDetailsSheet({ isOpen, onClose, task, onSave, onDelete }) {
 
     return (
         <Sheet open={isOpen} onOpenChange={onClose}>
-            <SheetContent className="w-full sm:max-w-md bg-background/95 backdrop-blur-md border-l border-border">
-                <SheetHeader className="mb-6">
+            <SheetContent className="w-full sm:max-w-md bg-background/95 backdrop-blur-md border-l border-border flex flex-col h-full">
+                <SheetHeader className="mb-6 flex-shrink-0">
                     <SheetTitle>{task?.id ? 'Editar Tarefa' : 'Nova Tarefa'}</SheetTitle>
                     <SheetDescription>
                         {task?.id ? 'Atualize os detalhes do seu compromisso.' : 'Agende um novo compromisso ou tarefa.'}
                     </SheetDescription>
                 </SheetHeader>
 
-                <div className="space-y-6">
-                    <div className="space-y-2">
-                        <Label htmlFor="title">Título</Label>
-                        <Input
-                            id="title"
-                            value={title}
-                            onChange={e => setTitle(e.target.value)}
-                            placeholder="Ex: Reunião com Cliente"
-                        />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
+                <div className="flex-1 overflow-y-auto pr-2 -mr-2">
+                    <div className="space-y-6 pb-6">
                         <div className="space-y-2">
-                            <Label>Data</Label>
-                            <div className="relative">
-                                <Input
-                                    type="date"
-                                    value={date}
-                                    onChange={e => setDate(e.target.value)}
-                                    className="pl-9"
-                                />
-                                <CalendarIcon className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground" />
-                            </div>
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Horário (Opcional)</Label>
-                            <div className="relative">
-                                <Input
-                                    type="time"
-                                    value={time}
-                                    onChange={e => setTime(e.target.value)}
-                                    className="pl-9"
-                                />
-                                <Clock className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground" />
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="flex items-center justify-between p-3 border rounded-lg bg-secondary/20">
-                        <Label htmlFor="is_habit" className="cursor-pointer">É um Hábito Diário?</Label>
-                        <Switch id="is_habit" checked={isHabit} onCheckedChange={setIsHabit} />
-                    </div>
-
-                    <div className="flex items-center justify-between p-3 border rounded-lg bg-secondary/20">
-                        <div className="flex flex-col gap-1">
-                            <Label htmlFor="reminder" className="cursor-pointer">Lembrete</Label>
-                            <span className="text-xs text-muted-foreground">Avisar 30 min antes</span>
-                        </div>
-                        <Switch id="reminder" checked={reminder} onCheckedChange={setReminder} />
-                    </div>
-
-                    {/* Subtasks / Checklist */}
-                    <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                            <Label>Checklist (Sub-tarefas)</Label>
-                            <span className="text-xs text-muted-foreground">
-                                {subtasks.filter(s => s.completed).length}/{subtasks.length}
-                            </span>
+                            <Label htmlFor="title">Título</Label>
+                            <Input
+                                id="title"
+                                value={title}
+                                onChange={e => setTitle(e.target.value)}
+                                placeholder="Ex: Reunião com Cliente"
+                            />
                         </div>
 
-                        <div className="space-y-2">
-                            {subtasks.map((sub, index) => (
-                                <div key={index} className="flex items-center gap-2 group animate-in slide-in-from-left-2 duration-300">
-                                    <Switch
-                                        checked={sub.completed}
-                                        onCheckedChange={(checked) => {
-                                            const newSub = [...subtasks];
-                                            newSub[index].completed = checked;
-                                            setSubtasks(newSub);
-                                        }}
-                                        className="scale-75"
-                                    />
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label>Data</Label>
+                                <div className="relative">
                                     <Input
-                                        value={sub.title}
-                                        onChange={(e) => {
-                                            const newSub = [...subtasks];
-                                            newSub[index].title = e.target.value;
-                                            setSubtasks(newSub);
-                                        }}
-                                        className="h-8 text-sm bg-secondary/10 border-none focus-visible:ring-1"
-                                        placeholder="Item da lista..."
+                                        type="date"
+                                        value={date}
+                                        onChange={e => setDate(e.target.value)}
+                                        className="pl-9"
                                     />
-                                    <Button
-                                        size="icon"
-                                        variant="ghost"
-                                        className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                                        onClick={() => {
-                                            setSubtasks(subtasks.filter((_, i) => i !== index));
-                                        }}
-                                    >
-                                        <Trash2 className="w-3 h-3 text-muted-foreground hover:text-destructive" />
-                                    </Button>
+                                    <CalendarIcon className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground" />
                                 </div>
-                            ))}
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className="w-full text-xs border-dashed text-muted-foreground hover:text-primary"
-                                onClick={() => setSubtasks([...subtasks, { title: '', completed: false }])}
-                            >
-                                + Adicionar item
-                            </Button>
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Horário (Opcional)</Label>
+                                <div className="relative">
+                                    <Input
+                                        type="time"
+                                        value={time}
+                                        onChange={e => setTime(e.target.value)}
+                                        className="pl-9"
+                                    />
+                                    <Clock className="w-4 h-4 absolute left-3 top-2.5 text-muted-foreground" />
+                                </div>
+                            </div>
                         </div>
-                    </div>
 
-                    <div className="space-y-2">
-                        <Label htmlFor="description">Detalhes / Notas</Label>
-                        <Textarea
-                            id="description"
-                            value={description}
-                            onChange={e => setDescription(e.target.value)}
-                            placeholder="Adicione links, endereços ou observações..."
-                            className="min-h-[100px]"
-                        />
+                        <div className="flex items-center justify-between p-3 border rounded-lg bg-secondary/20">
+                            <Label htmlFor="is_habit" className="cursor-pointer">É um Hábito Diário?</Label>
+                            <Switch id="is_habit" checked={isHabit} onCheckedChange={setIsHabit} />
+                        </div>
+
+                        <div className="flex items-center justify-between p-3 border rounded-lg bg-secondary/20">
+                            <div className="flex flex-col gap-1">
+                                <Label htmlFor="reminder" className="cursor-pointer">Lembrete</Label>
+                                <span className="text-xs text-muted-foreground">Avisar 30 min antes</span>
+                            </div>
+                            <Switch id="reminder" checked={reminder} onCheckedChange={setReminder} />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Prioridade</Label>
+                            <div className="flex gap-2">
+                                {['low', 'medium', 'high'].map((p) => (
+                                    <button
+                                        key={p}
+                                        onClick={() => setPriority(p)}
+                                        className={cn(
+                                            "flex-1 py-2 rounded-lg border text-xs font-medium capitalize transition-all",
+                                            priority === p && p === 'high' && "bg-red-500/10 border-red-500 text-red-500",
+                                            priority === p && p === 'medium' && "bg-yellow-500/10 border-yellow-500 text-yellow-500",
+                                            priority === p && p === 'low' && "bg-green-500/10 border-green-500 text-green-500",
+                                            priority !== p && "bg-card border-border hover:border-primary/50 text-muted-foreground"
+                                        )}
+                                    >
+                                        {p === 'low' ? 'Baixa' : p === 'medium' ? 'Média' : 'Alta'}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Subtasks / Checklist */}
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                                <Label>Checklist (Sub-tarefas)</Label>
+                                <span className="text-xs text-muted-foreground">
+                                    {subtasks.filter(s => s.completed).length}/{subtasks.length}
+                                </span>
+                            </div>
+
+                            <div className="space-y-2">
+                                {subtasks.map((sub, index) => (
+                                    <div key={index} className="flex items-center gap-2 group animate-in slide-in-from-left-2 duration-300">
+                                        <Switch
+                                            checked={sub.completed}
+                                            onCheckedChange={(checked) => {
+                                                const newSub = [...subtasks];
+                                                newSub[index].completed = checked;
+                                                setSubtasks(newSub);
+                                            }}
+                                            className="scale-75"
+                                        />
+                                        <Input
+                                            value={sub.title}
+                                            onChange={(e) => {
+                                                const newSub = [...subtasks];
+                                                newSub[index].title = e.target.value;
+                                                setSubtasks(newSub);
+                                            }}
+                                            className="h-8 text-sm bg-secondary/10 border-none focus-visible:ring-1"
+                                            placeholder="Item da lista..."
+                                        />
+                                        <Button
+                                            size="icon"
+                                            variant="ghost"
+                                            className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                                            onClick={() => {
+                                                setSubtasks(subtasks.filter((_, i) => i !== index));
+                                            }}
+                                        >
+                                            <Trash2 className="w-3 h-3 text-muted-foreground hover:text-destructive" />
+                                        </Button>
+                                    </div>
+                                ))}
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="w-full text-xs border-dashed text-muted-foreground hover:text-primary"
+                                    onClick={() => setSubtasks([...subtasks, { title: '', completed: false }])}
+                                >
+                                    + Adicionar item
+                                </Button>
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="description">Detalhes / Notas</Label>
+                            <Textarea
+                                id="description"
+                                value={description}
+                                onChange={e => setDescription(e.target.value)}
+                                placeholder="Adicione links, endereços ou observações..."
+                                className="min-h-[100px]"
+                            />
+                        </div>
                     </div>
                 </div>
 
-                <SheetFooter className="mt-8 gap-2 sm:gap-0">
+                <SheetFooter className="mt-4 flex-shrink-0 gap-2 sm:gap-0">
                     {task?.id && (
                         <Button
                             variant="destructive"
@@ -228,6 +255,6 @@ export function TaskDetailsSheet({ isOpen, onClose, task, onSave, onDelete }) {
                     <Button onClick={handleSave}>Salvar</Button>
                 </SheetFooter>
             </SheetContent>
-        </Sheet>
+        </Sheet >
     );
 }

@@ -48,7 +48,9 @@ create table if not exists public.accounts (
   balance numeric default 0,
   currency text default 'BRL',
   color text,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  origem text default 'pessoal', -- Added for filtering (empresa/pessoal)
+  banco text -- Added for institution name
 );
 alter table public.accounts enable row level security;
 -- Drop policies to avoid conflict
@@ -73,7 +75,8 @@ create table if not exists public.transactions (
   description text,
   date date default current_date,
   status text default 'completed',
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  origem text default 'pessoal' -- Added for filtering
 );
 alter table public.transactions enable row level security;
 drop policy if exists "Users can view own transactions" on public.transactions;
@@ -95,7 +98,9 @@ create table if not exists public.investments (
   quantity numeric default 0,
   purchase_price numeric default 0,
   current_price numeric default 0,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  origem text default 'pessoal', -- Added for filtering
+  liquidez text default 'imediata' -- Added for reserve calculation
 );
 alter table public.investments enable row level security;
 drop policy if exists "Users can view own investments" on public.investments;
@@ -295,6 +300,11 @@ create table if not exists public.goals (
 );
 
 alter table public.goals enable row level security;
+drop policy if exists "Users can view own goals" on public.goals;
+drop policy if exists "Users can insert own goals" on public.goals;
+drop policy if exists "Users can update own goals" on public.goals;
+drop policy if exists "Users can delete own goals" on public.goals;
+
 create policy "Users can view own goals" on public.goals for select using (auth.uid() = user_id);
 create policy "Users can insert own goals" on public.goals for insert with check (auth.uid() = user_id);
 create policy "Users can update own goals" on public.goals for update using (auth.uid() = user_id);
@@ -311,5 +321,12 @@ create policy "Users can insert own water logs" on public.water_logs for insert 
 create policy "Users can update own water logs" on public.water_logs for update using (auth.uid() = user_id);
 create policy "Users can delete own water logs" on public.water_logs for delete using (auth.uid() = user_id);
  
--- 13. Conclusão
--- Tudo atualizado (Status, Subtasks e Água).
+-- 13. Updates for Missing Columns
+alter table public.accounts add column if not exists origem text default 'pessoal';
+alter table public.accounts add column if not exists banco text;
+alter table public.transactions add column if not exists origem text default 'pessoal';
+alter table public.investments add column if not exists origem text default 'pessoal';
+alter table public.investments add column if not exists liquidez text default 'imediata';
+
+-- 14. Conclusão
+-- Tudo atualizado (Status, Subtasks, Água, Origem/Banco).

@@ -68,7 +68,7 @@ export function WeeklyKanban({ tasks, onTaskMove, onTaskClick }) {
             </div>
 
             {/* Kanban Columns */}
-            <div className="grid grid-cols-7 gap-3 min-h-[500px]">
+            <div className="grid grid-cols-7 gap-3 h-[calc(100vh-250px)] min-h-[500px]">
                 {days.map((day, index) => {
                     const dayTasks = getTasksForDay(day);
                     const isDayToday = isToday(day);
@@ -77,7 +77,7 @@ export function WeeklyKanban({ tasks, onTaskMove, onTaskClick }) {
                         <div
                             key={index}
                             className={cn(
-                                "flex flex-col rounded-xl border bg-card/50 transition-colors",
+                                "flex flex-col rounded-xl border bg-card/50 transition-colors overflow-hidden h-full",
                                 isDayToday ? "border-primary/50 bg-primary/5" : "border-border"
                             )}
                             onDragOver={handleDragOver}
@@ -85,7 +85,7 @@ export function WeeklyKanban({ tasks, onTaskMove, onTaskClick }) {
                         >
                             {/* Column Header */}
                             <div className={cn(
-                                "p-3 border-b border-border/50 text-center rounded-t-xl",
+                                "p-3 border-b border-border/50 text-center flex-shrink-0",
                                 isDayToday && "bg-primary/10"
                             )}>
                                 <p className="text-xs text-muted-foreground uppercase font-semibold">
@@ -100,7 +100,7 @@ export function WeeklyKanban({ tasks, onTaskMove, onTaskClick }) {
                             </div>
 
                             {/* Drop Zone / Task List */}
-                            <div className="flex-1 p-2 space-y-2">
+                            <div className="flex-1 p-2 space-y-2 overflow-y-auto scrollbar-thin scrollbar-thumb-secondary">
                                 {dayTasks.map(task => (
                                     <div
                                         key={task.id}
@@ -120,8 +120,6 @@ export function WeeklyKanban({ tasks, onTaskMove, onTaskClick }) {
                                             )}>
                                                 {task.title}
                                             </span>
-                                            {/* Drag Handle Indicator (Visual only) */}
-                                            {/*<GripVertical className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 absolute top-2 right-1" />*/}
                                         </div>
 
                                         {task.start_at && task.start_at.includes('T') && (
@@ -134,6 +132,16 @@ export function WeeklyKanban({ tasks, onTaskMove, onTaskClick }) {
                                         {task.is_habit && (
                                             <div className="mt-1 text-[10px] text-orange-500 font-medium">
                                                 Hábito
+                                            </div>
+                                        )}
+
+                                        {/* Progress Bar for Subtasks */}
+                                        {task.subtasks && task.subtasks.length > 0 && (
+                                            <div className="h-1 w-full bg-secondary rounded-full overflow-hidden mt-2">
+                                                <div
+                                                    className="h-full bg-primary/70"
+                                                    style={{ width: `${(task.subtasks.filter(s => s.completed).length / task.subtasks.length) * 100}%` }}
+                                                />
                                             </div>
                                         )}
                                     </div>

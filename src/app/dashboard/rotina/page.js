@@ -5,18 +5,21 @@ import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Check, Trash2, Calendar as CalendarIcon, Repeat, Flame, Trophy, ListTodo, CalendarDays, Columns, Droplets, Minus, Settings } from 'lucide-react';
+import { Plus, ListTodo, Calendar as CalendarIcon, Columns } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { useFinancialContext } from '@/contexts/FinancialContext';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 
 import { RoutineCalendar } from '@/components/routine/RoutineCalendar';
 import { TaskDetailsSheet } from '@/components/routine/TaskDetailsSheet';
 import { WeeklyKanban } from '@/components/routine/WeeklyKanban';
+import { GamificationCard } from '@/components/routine/GamificationCard';
+import { WaterTracker } from '@/components/routine/WaterTracker';
+import { HabitList } from '@/components/routine/HabitList';
+import { HabitStats } from '@/components/routine/HabitStats';
 
 export default function RoutinePage() {
     const { user } = useFinancialContext();
@@ -29,19 +32,15 @@ export default function RoutinePage() {
     const [waterGoal, setWaterGoal] = useState(2000);
     const [loading, setLoading] = useState(true);
 
-    // Dialogs State
-    const [isWaterDialogOpen, setIsWaterDialogOpen] = useState(false);
-    const [customWaterAmount, setCustomWaterAmount] = useState('');
-    const [isGoalDialogOpen, setIsGoalDialogOpen] = useState(false);
-    const [tempGoal, setTempGoal] = useState(2000);
+    // Gamification State
+    const [xp, setXp] = useState(0);
+    const [level, setLevel] = useState(1);
 
     // UI State
     const [newTask, setNewTask] = useState('');
     const [isHabit, setIsHabit] = useState(false);
     const [selectedTask, setSelectedTask] = useState(null); // For editing
     const [isSheetOpen, setIsSheetOpen] = useState(false);
-
-    // Filters
     const [viewMode, setViewMode] = useState('today'); // 'today' | 'calendar' | 'kanban'
 
     // Fetch Routine Data
@@ -52,17 +51,16 @@ export default function RoutinePage() {
         const { data, error } = await supabase
             .from('tasks')
             .select('*')
-            .order('start_at', { ascending: true }) // Sort by start time for calendar logic
+            .order('start_at', { ascending: true })
             .order('created_at', { ascending: false });
 
         if (error) {
             console.error('Error fetching routine:', error);
-            if (error.message.includes('start_at') || error.code === '42703') { // 42703 is Undefined Column
-                alert("Erro de Banco de Dados: Coluna 'start_at' não encontrada. Por favor, execute o script 'supabase/update_routine_schema.sql' no Supabase.");
-            }
         } else {
             setTasks(data.filter(t => !t.is_habit));
-            setHabits(data.filter(t => t.is_habit));
+            const userHabits = data.filter(t => t.is_habit);
+            setHabits(userHabits);
+            calculateXp(userHabits, waterIntake);
         }
         setLoading(false);
     };
@@ -78,17 +76,30 @@ export default function RoutinePage() {
             ]);
 
             const profileGoal = profileRes.data?.daily_water_goal || 2000;
+            const currentIntake = logRes.data?.amount_ml || 0;
 
-            if (logRes.data) {
-                setWaterIntake(logRes.data.amount_ml);
-                setWaterGoal(logRes.data.daily_goal_ml || profileGoal);
-            } else {
-                setWaterIntake(0);
-                setWaterGoal(profileGoal);
-            }
+            setWaterIntake(currentIntake);
+            setWaterGoal(logRes.data?.daily_goal_ml || profileGoal);
+
+            // Re-calc XP with new water data
+            calculateXp(habits, currentIntake); // Note: habits might be stale here if fetchRoutine hasn't run, but effect helps
+
         } catch (error) {
             console.error('Error fetching water:', error);
         }
+    };
+
+    // Simple XP Calculation Logic
+    const calculateXp = (currentHabits, currentWater) => {
+        // 10 XP per habit streak day (total)
+        // 5 XP per 500ml water
+
+        const habitXp = currentHabits.reduce((acc, h) => acc + (h.streak * 10), 0);
+        const waterXp = Math.floor(currentWater / 500) * 5;
+
+        const totalXp = habitXp + waterXp;
+        setXp(totalXp);
+        setLevel(Math.floor(totalXp / 100) + 1);
     };
 
     useEffect(() => {
@@ -101,11 +112,7 @@ export default function RoutinePage() {
     const handleQuickAdd = async (e) => {
         e.preventDefault();
         if (!newTask.trim()) return;
-
-        if (!user) {
-            alert("Sessão de usuário não encontrada. Tente sair e entrar novamente, ou recarregar a página.");
-            return;
-        }
+        if (!user) return;
 
         const taskData = {
             user_id: user.id,
@@ -114,23 +121,23 @@ export default function RoutinePage() {
             status: 'pending',
             frequency: isHabit ? 'daily' : 'once',
             streak: 0,
-            start_at: new Date().toISOString(), // Default to now
+            start_at: new Date().toISOString(),
             created_at: new Date().toISOString()
         };
 
-        // Optimistic
         const tempId = Math.random().toString();
         if (isHabit) {
             setHabits([{ ...taskData, id: tempId }, ...habits]);
         } else {
             setTasks([{ ...taskData, id: tempId }, ...tasks]);
         }
+        setNewTask('');
 
         const { data, error } = await supabase.from('tasks').insert(taskData).select().single();
 
         if (error) {
             console.error('Error quick adding:', error);
-            alert(`Erro Quick Add: ${error.message}\nCode: ${error.code}\nUser ID: ${user?.id}`);
+            fetchRoutine(); // Revert
             return;
         }
 
@@ -138,51 +145,39 @@ export default function RoutinePage() {
             const updateList = isHabit ? setHabits : setTasks;
             updateList(prev => prev.map(item => item.id === tempId ? data : item));
         }
-
-        setNewTask('');
     };
 
     const handleSaveTask = async (taskData) => {
-        if (!user) {
-            alert("Erro: Usuário não autenticado.");
-            return;
-        }
+        if (!user) return;
 
-        // Prepare payload
         const payload = {
             user_id: user.id,
             title: taskData.title,
             description: taskData.description,
             is_habit: taskData.is_habit,
+            priority: taskData.priority,
             start_at: taskData.start_at,
-            reminder_minutes: taskData.reminder_minutes
+            reminder_minutes: taskData.reminder_minutes,
+            subtasks: taskData.subtasks || []
         };
 
-        let savedData;
         let error;
-
         if (taskData.id) {
-            // Update
             const result = await supabase.from('tasks').update(payload).eq('id', taskData.id).select().single();
-            savedData = result.data;
             error = result.error;
         } else {
-            // Create
             const result = await supabase.from('tasks').insert(payload).select().single();
-            savedData = result.data;
             error = result.error;
         }
 
         if (error) {
             console.error('Erro ao salvar tarefa:', error);
-            alert(`Erro ao salvar: ${error.message} \nCode: ${error.code}\nUser ID: ${user?.id}\nPayload: ${JSON.stringify(payload)}`);
+            alert(`Erro ao salvar: ${error.message}`);
             return;
         }
 
-        if (savedData) {
-            setIsSheetOpen(false);
-            fetchRoutine();
-        }
+        setIsSheetOpen(false);
+        fetchRoutine();
     };
 
     const handleDeleteTask = async (id) => {
@@ -196,37 +191,25 @@ export default function RoutinePage() {
         if (!task) return;
 
         let newStartAt;
-
         if (task.start_at) {
-            // Preserve original time
             const originalTime = new Date(task.start_at);
             const newDate = new Date(targetDate);
             newDate.setHours(originalTime.getHours(), originalTime.getMinutes(), 0);
             newStartAt = newDate.toISOString();
         } else {
-            // No previous time, set to target date generic (avoid timezone shifting issues by setting to noon or keep time 00:00 local)
-            // Using 12:00 safe for date only
             const d = new Date(targetDate);
             d.setHours(12, 0, 0, 0);
             newStartAt = d.toISOString();
         }
 
-        // Optimistic Update
         const updateList = task.is_habit ? setHabits : setTasks;
         updateList(prev => prev.map(t => t.id === taskId ? { ...t, start_at: newStartAt } : t));
 
-        // DB Update
-        const { error } = await supabase.from('tasks').update({ start_at: newStartAt }).eq('id', taskId);
-        if (error) {
-            console.error("Erro ao mover tarefa:", error);
-            alert("Erro ao mover tarefa. Verifique o banco de dados.");
-            fetchRoutine(); // Revert
-        }
+        await supabase.from('tasks').update({ start_at: newStartAt }).eq('id', taskId);
     };
 
-    const toggleCompletion = async (item, isItemHabit) => {
-        if (isItemHabit) {
-            // Habit Toggle Logic (Streak)
+    const toggleCompletion = async (item) => {
+        if (item.is_habit) {
             const today = new Date().toISOString().split('T')[0];
             const lastCompleted = item.last_completed_at ? new Date(item.last_completed_at).toISOString().split('T')[0] : null;
             const isCompletedToday = lastCompleted === today;
@@ -244,68 +227,51 @@ export default function RoutinePage() {
                 };
             }
 
-            // Optimistic
-            setHabits(prev => prev.map(h => h.id === item.id ? { ...h, ...updates } : h));
+            setHabits(prev => {
+                const newHabits = prev.map(h => h.id === item.id ? { ...h, ...updates } : h);
+                calculateXp(newHabits, waterIntake); // Update XP immediately
+                return newHabits;
+            });
             await supabase.from('tasks').update(updates).eq('id', item.id);
 
         } else {
-            // Task Toggle Logic
             const newStatus = !item.completed;
             setTasks(prev => prev.map(t => t.id === item.id ? { ...t, completed: newStatus } : t));
             await supabase.from('tasks').update({ completed: newStatus }).eq('id', item.id);
         }
     };
 
-    const handleAddWater = async (amount) => {
+    const handleUpdateWater = async (amountToAdd) => {
         if (!user) return;
-        const newAmount = Math.max(0, waterIntake + amount);
-        setWaterIntake(newAmount); // Optimistic
+        const newAmount = Math.max(0, waterIntake + amountToAdd);
+        setWaterIntake(newAmount);
+        calculateXp(habits, newAmount);
 
         const today = new Date().toISOString().split('T')[0];
 
-        const { error } = await supabase.from('water_logs').upsert({
+        await supabase.from('water_logs').upsert({
             user_id: user.id,
             date: today,
             amount_ml: newAmount,
             daily_goal_ml: waterGoal
         }, { onConflict: 'user_id, date' });
-
-        if (error) {
-            console.error("Erro ao salvar água:", error);
-            fetchWater(); // Revert
-        }
     };
 
-    const handleAddCustomWater = () => {
-        const amount = parseInt(customWaterAmount);
-        if (amount && amount > 0) {
-            handleAddWater(amount);
-            setCustomWaterAmount('');
-            setIsWaterDialogOpen(false);
-        }
-    };
+    const handleUpdateWaterGoal = async (newGoal) => {
+        if (!user || newGoal <= 0) return;
+        setWaterGoal(newGoal);
 
-    const handleSaveGoal = async () => {
-        if (!user) return;
-        const newGoal = parseInt(tempGoal);
-        if (!newGoal || newGoal <= 0) return;
-
-        setWaterGoal(newGoal); // Optimistic
-        setIsGoalDialogOpen(false);
-
-        // Update Profile (Persistent)
+        // Update Profile
         await supabase.from('profiles').update({ daily_water_goal: newGoal }).eq('id', user.id);
 
-        // Update Today's Log
+        // Update Log
         const today = new Date().toISOString().split('T')[0];
-        const { error } = await supabase.from('water_logs').upsert({
+        await supabase.from('water_logs').upsert({
             user_id: user.id,
             date: today,
             amount_ml: waterIntake,
             daily_goal_ml: newGoal
         }, { onConflict: 'user_id, date' });
-
-        if (error) console.error("Error saving goal:", error);
     };
 
     // --- Interactions ---
@@ -321,36 +287,26 @@ export default function RoutinePage() {
     };
 
     const handleDateSelect = (date) => {
-        // Open modal pre-filled with date
         const dateStr = format(date, 'yyyy-MM-dd');
         setSelectedTask({
             due_date: dateStr,
             start_at: new Date(date).toISOString()
-        }); // Mock object for default
+        });
         setIsSheetOpen(true);
     };
 
-
-    const todayDate = format(new Date(), "EEEE, d 'de' MMMM", { locale: ptBR });
-
-    // Check if habit is done today
-    const isHabitDoneToday = (habit) => {
-        if (!habit.last_completed_at) return false;
-        const today = new Date().toISOString().split('T')[0];
-        const last = new Date(habit.last_completed_at).toISOString().split('T')[0];
-        return today === last;
-    };
-
     return (
-        <div className="space-y-6 animate-in fade-in duration-500">
+        <div className="space-y-6 animate-in fade-in duration-500 pb-20">
             {/* Header & Tabs */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                     <h2 className="text-2xl font-bold text-foreground">Minha Rotina</h2>
-                    <p className="text-muted-foreground capitalize">{todayDate}</p>
+                    <p className="text-muted-foreground capitalize">
+                        {format(new Date(), "EEEE, d 'de' MMMM", { locale: ptBR })}
+                    </p>
                 </div>
 
-                <div className="flex items-center gap-2 bg-secondary/30 p-1 rounded-lg">
+                <div className="flex items-center gap-2 bg-secondary/30 p-1 rounded-lg self-start md:self-auto">
                     <Button
                         variant={viewMode === 'today' ? 'secondary' : 'ghost'}
                         size="sm"
@@ -383,163 +339,43 @@ export default function RoutinePage() {
 
             {/* Content Area */}
             {viewMode === 'today' && (
-                <div className="space-y-6">
-                    {/* Input Area */}
-                    <div className="glass-card p-4 rounded-xl shadow-lg border-primary/10 border">
-                        <form onSubmit={handleQuickAdd} className="flex gap-2">
-                            <div className="flex-1">
-                                <Input
-                                    placeholder="Adicionar nova tarefa ou hábito..."
-                                    value={newTask}
-                                    onChange={(e) => setNewTask(e.target.value)}
-                                    className="bg-background/50 border-0 focus-visible:ring-1 focus-visible:ring-primary"
-                                />
-                            </div>
-                            <div className="flex items-center gap-2 px-2 border-r border-border/50 pr-4 mr-2">
-                                <Checkbox
-                                    id="isHabit"
-                                    checked={isHabit}
-                                    onCheckedChange={setIsHabit}
-                                />
-                                <label htmlFor="isHabit" className="text-sm cursor-pointer select-none">Hábito</label>
-                            </div>
-                            <Button type="button" onClick={handleQuickAdd} disabled={!newTask} className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold shadow-md shadow-primary/20">
-                                <Plus className="w-4 h-4 mr-2" />
-                                Adicionar
-                            </Button>
-                        </form>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {/* Habits Column */}
-                        <div className="space-y-4">
-                            <h3 className="text-lg font-semibold flex items-center gap-2 text-foreground/80">
-                                <Flame className="w-5 h-5 text-orange-500" />
-                                Hábitos Diários
-                            </h3>
-
-                            {/* Water Tracker - Compact */}
-                            <div className="glass-card p-4 rounded-xl border border-blue-500/20 bg-blue-500/5 relative overflow-hidden">
-                                <div className="absolute top-0 right-0 p-4 opacity-10">
-                                    <Droplets className="w-24 h-24 text-blue-500" />
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Left Column: Input + Tasks (2/3 width) */}
+                    <div className="lg:col-span-2 space-y-6">
+                        {/* Quick Add Input */}
+                        <div className="glass-card p-4 rounded-xl shadow-sm border border-border">
+                            <form onSubmit={handleQuickAdd} className="flex gap-2">
+                                <div className="flex-1">
+                                    <Input
+                                        placeholder="Adicionar nova tarefa ou hábito..."
+                                        value={newTask}
+                                        onChange={(e) => setNewTask(e.target.value)}
+                                        className="bg-transparent border-0 focus-visible:ring-0 placeholder:text-muted-foreground/50"
+                                    />
                                 </div>
-                                <div className="relative z-10">
-                                    <div className="flex items-center justify-between mb-2">
-                                        <div className="flex items-center gap-2 text-blue-400">
-                                            <Droplets className="w-5 h-5" />
-                                            <h4 className="font-semibold">Hidratação</h4>
-                                            <Button variant="ghost" size="icon" className="h-6 w-6 text-blue-400/50 hover:text-blue-400" onClick={() => { setTempGoal(waterGoal); setIsGoalDialogOpen(true); }}>
-                                                <Settings className="w-3 h-3" />
-                                            </Button>
-                                        </div>
-                                        <span className="text-2xl font-bold text-foreground">
-                                            {(waterIntake / 1000).toFixed(1)}<span className="text-sm font-normal text-muted-foreground">/{waterGoal / 1000}L</span>
-                                        </span>
-                                    </div>
-
-                                    <div className="h-2 w-full bg-blue-950 rounded-full overflow-hidden mb-4">
-                                        <div
-                                            className="h-full bg-blue-500 transition-all duration-500 ease-out"
-                                            style={{ width: `${Math.min(100, (waterIntake / waterGoal) * 100)}%` }}
+                                <div className="flex items-center gap-4 border-l border-border pl-4">
+                                    <div className="flex items-center gap-2">
+                                        <Checkbox
+                                            id="isHabit"
+                                            checked={isHabit}
+                                            onCheckedChange={setIsHabit}
                                         />
+                                        <label htmlFor="isHabit" className="text-sm cursor-pointer select-none font-medium">Hábito</label>
                                     </div>
-
-                                    <div className="flex gap-2">
-                                        <Button
-                                            size="sm"
-                                            variant="outline"
-                                            onClick={() => handleAddWater(250)}
-                                            className="flex-1 border-blue-500/30 hover:bg-blue-500/10 hover:text-blue-400"
-                                        >
-                                            +250ml
-                                        </Button>
-                                        <Button
-                                            size="sm"
-                                            variant="outline"
-                                            onClick={() => handleAddWater(500)}
-                                            className="flex-1 border-blue-500/30 hover:bg-blue-500/10 hover:text-blue-400"
-                                        >
-                                            +500ml
-                                        </Button>
-                                        <Dialog open={isWaterDialogOpen} onOpenChange={setIsWaterDialogOpen}>
-                                            <DialogTrigger asChild>
-                                                <Button size="sm" variant="outline" className="flex-1 border-blue-500/30 border-dashed hover:bg-blue-500/10 hover:text-blue-400">
-                                                    Outro
-                                                </Button>
-                                            </DialogTrigger>
-                                            <DialogContent>
-                                                <DialogHeader>
-                                                    <DialogTitle>Adicionar Água</DialogTitle>
-                                                </DialogHeader>
-                                                <div className="py-4">
-                                                    <Label>Quantidade (ml)</Label>
-                                                    <Input
-                                                        type="number"
-                                                        value={customWaterAmount}
-                                                        onChange={e => setCustomWaterAmount(e.target.value)}
-                                                        placeholder="Ex: 300"
-                                                        autoFocus
-                                                    />
-                                                </div>
-                                                <DialogFooter>
-                                                    <Button onClick={handleAddCustomWater}>Adicionar</Button>
-                                                </DialogFooter>
-                                            </DialogContent>
-                                        </Dialog>
-                                        <Button
-                                            size="icon"
-                                            variant="ghost"
-                                            onClick={() => handleAddWater(-250)}
-                                            className="text-muted-foreground hover:text-destructive"
-                                        >
-                                            <Minus className="w-4 h-4" />
-                                        </Button>
-                                    </div>
+                                    <Button type="button" onClick={handleQuickAdd} disabled={!newTask} size="sm" className="gradient-primary">
+                                        <Plus className="w-4 h-4 mr-2" />
+                                        Adicionar
+                                    </Button>
                                 </div>
-                            </div>
-
-                            <div className="space-y-2">
-                                {habits.length === 0 && <p className="text-sm text-muted-foreground italic">Nenhum hábito cadastrado.</p>}
-                                {habits.map(habit => {
-                                    const done = isHabitDoneToday(habit);
-                                    return (
-                                        <div
-                                            key={habit.id}
-                                            onClick={() => openEditTaskSheet(habit)}
-                                            className={cn(
-                                                "cursor-pointer p-4 rounded-xl border transition-all flex items-center justify-between group hover:shadow-md",
-                                                done ? "bg-success/5 border-success/20" : "bg-card border-border hover:border-primary/30"
-                                            )}>
-                                            <div className="flex items-center gap-3">
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); toggleCompletion(habit, true); }}
-                                                    className={cn(
-                                                        "w-6 h-6 rounded-full flex items-center justify-center border transition-all duration-300",
-                                                        done ? "bg-success border-success text-white scale-110" : "border-muted-foreground hover:border-primary hover:bg-primary/10"
-                                                    )}
-                                                >
-                                                    {done && <Check className="w-4 h-4" />}
-                                                </button>
-                                                <div>
-                                                    <p className={cn("font-medium transition-colors", done && "text-muted-foreground line-through")}>{habit.title}</p>
-                                                    <p className="text-xs text-muted-foreground flex items-center gap-1">
-                                                        <Flame className="w-3 h-3 text-orange-500" />
-                                                        Sequência: {habit.streak || 0} dias
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
+                            </form>
                         </div>
 
-                        {/* Tasks Column */}
+                        {/* Task List */}
                         <div className="space-y-4">
                             <div className="flex items-center justify-between">
-                                <h3 className="text-lg font-semibold flex items-center gap-2 text-foreground/80">
+                                <h3 className="text-lg font-semibold flex items-center gap-2 text-foreground">
                                     <ListTodo className="w-5 h-5 text-primary" />
-                                    Tarefas Pendentes
+                                    Tarefas de Hoje
                                 </h3>
                                 <Button size="sm" variant="ghost" className="text-xs" onClick={openNewTaskSheet}>
                                     + Detalhado
@@ -547,84 +383,123 @@ export default function RoutinePage() {
                             </div>
 
                             <div className="space-y-2">
-                                {tasks.filter(t => {
-                                    if (t.completed) return false;
-                                    if (!t.start_at) return true; // Sem data = Backlog (aparece)
-                                    // Compara datas (apenas YYYY-MM-DD)
-                                    const taskDate = new Date(t.start_at).toISOString().split('T')[0];
-                                    const today = new Date().toISOString().split('T')[0];
-                                    return taskDate <= today;
-                                }).length === 0 && <p className="text-sm text-muted-foreground italic">Nenhuma tarefa para hoje.</p>}
-
+                                {/* Tasks filtered by date <= today */}
                                 {tasks.filter(t => {
                                     if (t.completed) return false;
                                     if (!t.start_at) return true;
                                     const taskDate = new Date(t.start_at).toISOString().split('T')[0];
                                     const today = new Date().toISOString().split('T')[0];
                                     return taskDate <= today;
-                                }).map(task => (
-                                    <div
-                                        key={task.id}
-                                        onClick={() => openEditTaskSheet(task)}
-                                        className="cursor-pointer p-3 bg-card border border-border rounded-lg flex items-center justify-between group hover:shadow-md hover:border-primary/40 transition-all text-left"
-                                    >
-                                        <div className="flex items-center gap-3">
-                                            <Checkbox
-                                                checked={task.completed}
-                                                onCheckedChange={(v) => { toggleCompletion(task, false); }}
-                                                onClick={(e) => e.stopPropagation()}
-                                            />
-                                            <div className="flex flex-col">
-                                                <span className="text-sm font-medium">{task.title}</span>
-                                                {task.start_at && (
-                                                    <span className={cn(
-                                                        "text-[10px] flex items-center gap-1",
-                                                        new Date(task.start_at) < new Date().setHours(0, 0, 0, 0) ? "text-red-400" : "text-muted-foreground"
-                                                    )}>
-                                                        <CalendarIcon className="w-3 h-3" />
-                                                        {format(new Date(task.start_at), "dd/MM 'às' HH:mm")}
-                                                    </span>
-                                                )}
-                                                {/* Subtasks progress indicator */}
-                                                {task.subtasks && task.subtasks.length > 0 && (
-                                                    <span className="text-[10px] text-muted-foreground mt-0.5">
-                                                        {task.subtasks.filter(s => s.completed).length}/{task.subtasks.length} sub-tarefas
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
+                                }).length === 0 && (
+                                        <p className="text-sm text-muted-foreground italic text-center py-8">
+                                            Tudo limpo por hoje! Aproveite seu tempo.
+                                        </p>
+                                    )}
 
-                                {tasks.some(t => t.completed && (!t.start_at || new Date(t.start_at).toISOString().split('T')[0] <= new Date().toISOString().split('T')[0])) && (
-                                    <div className="pt-4 border-t border-border/50 mt-4">
-                                        <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Concluídas Hoje</h4>
-                                        {tasks.filter(t => {
-                                            if (!t.completed) return false;
-                                            if (!t.start_at) return true;
-                                            const taskDate = new Date(t.start_at).toISOString().split('T')[0];
-                                            const today = new Date().toISOString().split('T')[0];
-                                            return taskDate === today; // Só concluídas de hoje ou todas? Vamos filtrar por 'hoje' para limpar a view.
-                                        }).map(task => (
-                                            <div
-                                                key={task.id}
-                                                onClick={() => openEditTaskSheet(task)}
-                                                className="p-2 flex items-center justify-between group opacity-60 hover:opacity-100 transition-opacity cursor-pointer"
-                                            >
-                                                <div className="flex items-center gap-3">
-                                                    <Checkbox
-                                                        checked={task.completed}
-                                                        onCheckedChange={() => toggleCompletion(task, false)}
-                                                        onClick={(e) => e.stopPropagation()}
-                                                    />
-                                                    <span className="text-sm line-through text-muted-foreground">{task.title}</span>
+                                {tasks.filter(t => {
+                                    if (!t.start_at) return true;
+                                    const taskDate = new Date(t.start_at).toISOString().split('T')[0];
+                                    const today = new Date().toISOString().split('T')[0];
+                                    return taskDate <= today;
+                                })
+                                    .sort((a, b) => {
+                                        // 1. Incomplete first
+                                        if (a.completed !== b.completed) return a.completed ? 1 : -1;
+
+                                        // 2. High priority first (for incomplete)
+                                        const pScore = { 'high': 3, 'medium': 2, 'low': 1, null: 1 };
+                                        if (!a.completed && pScore[a.priority] !== pScore[b.priority]) {
+                                            return pScore[b.priority] - pScore[a.priority];
+                                        }
+
+                                        // 3. Time
+                                        return new Date(a.start_at) - new Date(b.start_at);
+                                    })
+                                    .map(task => (
+                                        <div
+                                            key={task.id}
+                                            onClick={() => openEditTaskSheet(task)}
+                                            className={cn(
+                                                "cursor-pointer p-4 bg-card border rounded-xl flex items-center justify-between group hover:shadow-md transition-all",
+                                                task.completed ? "opacity-60 bg-secondary/10 border-transparent" : "border-border hover:bg-secondary/20",
+                                                // Priority Borders for incomplete tasks
+                                                !task.completed && task.priority === 'high' && "border-l-4 border-l-red-500",
+                                                !task.completed && task.priority === 'medium' && "border-l-4 border-l-yellow-500",
+                                                !task.completed && task.priority === 'low' && "border-l-4 border-l-green-500"
+                                            )}
+                                        >
+                                            <div className="flex items-center gap-4 w-full">
+                                                <Checkbox
+                                                    checked={task.completed}
+                                                    onCheckedChange={() => toggleCompletion(task)}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    className="w-5 h-5 flex-shrink-0"
+                                                />
+                                                <div className="flex flex-col flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={cn(
+                                                            "font-medium truncate",
+                                                            task.completed ? "text-muted-foreground line-through" : "text-foreground"
+                                                        )}>
+                                                            {task.title}
+                                                        </span>
+                                                        {!task.completed && task.priority === 'high' && (
+                                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-500 font-medium uppercase tracking-wider">
+                                                                Alta
+                                                            </span>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Subtasks progress indicator */}
+                                                    {task.subtasks && task.subtasks.length > 0 && (
+                                                        <div className="w-full mt-1.5 space-y-1">
+                                                            <div className="flex justify-between items-center text-[10px] text-muted-foreground">
+                                                                <span>Subtarefas</span>
+                                                                <span>{Math.round((task.subtasks.filter(s => s.completed).length / task.subtasks.length) * 100)}%</span>
+                                                            </div>
+                                                            <div className="h-1.5 w-full bg-secondary rounded-full overflow-hidden">
+                                                                <div
+                                                                    className="h-full bg-primary transition-all duration-300"
+                                                                    style={{ width: `${(task.subtasks.filter(s => s.completed).length / task.subtasks.length) * 100}%` }}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    {task.start_at && (
+                                                        <span className={cn(
+                                                            "text-xs flex items-center gap-1 mt-1",
+                                                            new Date(task.start_at) < new Date().setHours(0, 0, 0, 0) ? "text-red-400" : "text-muted-foreground"
+                                                        )}>
+                                                            <CalendarIcon className="w-3 h-3" />
+                                                            {format(new Date(task.start_at), "dd/MM 'às' HH:mm")}
+                                                        </span>
+                                                    )}
                                                 </div>
                                             </div>
-                                        ))}
-                                    </div>
-                                )}
+                                        </div>
+                                    ))}
                             </div>
                         </div>
+                    </div>
+
+                    {/* Right Column: Gamification & Habits (1/3 width) */}
+                    <div className="space-y-6">
+                        <GamificationCard xp={xp} level={level} nextLevelXp={level * 100} />
+
+                        <WaterTracker
+                            current={waterIntake}
+                            goal={waterGoal}
+                            onAdd={handleUpdateWater}
+                            onUpdateGoal={handleUpdateWaterGoal}
+                        />
+
+                        <HabitStats habits={habits} />
+
+                        <HabitList
+                            habits={habits}
+                            onToggle={toggleCompletion}
+                            onEdit={openEditTaskSheet}
+                        />
                     </div>
                 </div>
             )}
@@ -667,27 +542,6 @@ export default function RoutinePage() {
                 onSave={handleSaveTask}
                 onDelete={handleDeleteTask}
             />
-
-            <Dialog open={isGoalDialogOpen} onOpenChange={setIsGoalDialogOpen}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Configurar Meta Diária</DialogTitle>
-                    </DialogHeader>
-                    <div className="py-4">
-                        <Label>Meta de Água (ml)</Label>
-                        <Input
-                            type="number"
-                            value={tempGoal}
-                            onChange={e => setTempGoal(e.target.value)}
-                            placeholder="Ex: 2000"
-                        />
-                        <p className="text-xs text-muted-foreground mt-2">Isso atualizará sua meta padrão.</p>
-                    </div>
-                    <DialogFooter>
-                        <Button onClick={handleSaveGoal}>Salvar Meta</Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
         </div>
     );
 }

@@ -40,6 +40,12 @@ export function Header() {
     const supabase = createClient();
 
     const handleLogout = async () => {
+        // Clear local storage goals to prevent data leak between users
+        if (typeof window !== 'undefined') {
+            localStorage.removeItem('monthlyGoalEmpresa');
+            localStorage.removeItem('monthlyGoalPessoal');
+            localStorage.removeItem('monthlyGoalConsolidado');
+        }
         await supabase.auth.signOut();
         router.push('/login');
     };

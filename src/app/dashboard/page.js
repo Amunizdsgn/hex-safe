@@ -19,13 +19,24 @@ export default function DashboardPage() {
   const { transactions, context, clients, selectedMonth, selectedYear } = useFinancialContext();
 
   // --- GOAL STATE ---
-  const [monthlyGoal, setMonthlyGoal] = useState(80000); // Default fallback
+  const [monthlyGoal, setMonthlyGoal] = useState(80000);
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('monthlyGoal');
-      if (saved) setMonthlyGoal(Number(saved));
+      const getGoal = () => {
+        if (context === 'consolidado') {
+          const empresaGoal = Number(localStorage.getItem('monthlyGoalEmpresa')) || 80000;
+          const pessoalGoal = Number(localStorage.getItem('monthlyGoalPessoal')) || 20000;
+          return empresaGoal + pessoalGoal;
+        }
+
+        const key = context === 'pessoal' ? 'monthlyGoalPessoal' : 'monthlyGoalEmpresa';
+        return Number(localStorage.getItem(key)) || (context === 'pessoal' ? 20000 : 80000);
+      };
+
+      setMonthlyGoal(getGoal());
     }
-  }, []);
+  }, [context]);
 
 
   // --- DYNAMIC CALCULATIONS ---

@@ -105,9 +105,26 @@ export function useAccounts(context = 'all') {
                 return { data: newAcc, error: null };
             }
 
+            const dbPayload = {
+                user_id: user.id,
+                name: account.nome,
+                type: account.type || account.tipo || 'banco',
+                balance: account.balance || account.saldoAtual || 0,
+                // Optional fields that might rely on DB schema updates if not present by default:
+                origem: account.origem,
+                color: account.color || account.cor,
+                banco: account.banco, // Pass through if column exists
+                bank: account.banco,   // Try English alias if 'banco' fails? No, better stick to likely schema.
+                // If schema is strictly 'name', 'type', 'balance', sending 'nome' usually errors unless we map it.
+                // We'll stick to English keys for known schema columns:
+            };
+
+            // Clean undefined
+            Object.keys(dbPayload).forEach(key => dbPayload[key] === undefined && delete dbPayload[key]);
+
             const { data, error } = await supabase
                 .from('accounts')
-                .insert([{ ...account, user_id: user.id }])
+                .insert([dbPayload])
                 .select()
                 .single();
 
@@ -115,9 +132,13 @@ export function useAccounts(context = 'all') {
             setAccounts(prev => [...prev, data]);
             return { data, error: null };
         } catch (err) {
-            console.error('Error adding account:', err);
+            console.error('Error adding account:', JSON.stringify(err, null, 2));
+            if (err.message) console.error('Error message:', err.message);
+            if (err.details) console.error('Error details:', err.details);
+            if (err.hint) console.error('Error hint:', err.hint);
+
             const newAcc = addLocalAccount(account);
-            return { data: newAcc, error: null };
+            return { data: newAcc, error: err };
         } finally {
             setLoading(false);
         }
